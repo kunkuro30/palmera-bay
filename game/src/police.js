@@ -1,110 +1,213 @@
-// police.js — the Palmera Bay PD: the wanted heat that rises when crimes are
-// seen and cools when they are not, the cruisers that spawn to match the
-// star count, the pursuit driving, and the BUSTED timer when they box the
-// player in. This is the game's one deep system: everything feeds it.
+// police.js — the bay's law: heat becomes stars, stars become cruisers, and
+// cruisers become a bust if they pin you at walking pace for long enough.
 
-import { WANTED, CITY } from './config.js';
-import { makeRng } from './random.js';
-import { makeCar, driveCar } from './vehicles.js';
-import { avenuePositions } from './world.js';
+import { WANTED, AVENUES, CITY } from './config.js';
+import { createCar, driveCar, steerToward } from './vehicles.js';
+import { pick, range } from './random.js';
 
-export function createPolice(scene, seed, world, hooks) {
-  const rng = makeRng(seed ^ 0xc091);
-  const avenues = avenuePositions();
+export function createPolice(scene, rng, world, hooks) {
+  let heat = 0;
+  let stars = 0;
+  let bustedTimer = 0;
+  let spawnTimer = 0;
+  let sirenOn = false;
+  let seenNow = false;
+  let t = 0;
   const units = [];
-  const police = {
-    heat: 0, stars: 0, bustedTimer: 0, busted: false, seen: false,
-  };
 
-  police.addHeat = (amount) => {
-    police.heat = Math.min(1, police.heat + amount);
-  };
-  police.clearHeat = () => { police.heat = 0; police.bustedTimer = 0; police.busted = false; };
+  // the roadblock: two cruisers angled across the player's avenue
+  let block = null;
+  let blockTimer = 6;
 
-  function starsFor(heat) {
-    let s = 0;
-    for (let i = 0; i < WANTED.stars.length; i++) if (heat >= WANTED.stars[i]) s = i;
-    return s;
+  function clearBlock() {
+    if (!block) return;
+    for (const c of block.cars) scene.remove(c.mesh);
+    block = null;
   }
 
-  function spawnUnit(playerPos) {
-    // appear on an avenue a block or two away, never on top of the player
+  function placeBlock(ctx) {
+    // only on a north-south avenue (or the coast road) with room ahead
+    let avenue = null;
+    for (const a of AVENUES) if (Math.abs(ctx.x - a) < 10) avenue = a;
+    const fz = Math.cos(ctx.heading || 0);
+    if (avenue === null || Math.abs(fz) < 0.5) { blockTimer = 5; return; }
+    const dirZ = fz > 0 ? 1 : -1;
+    const bz = ctx.z + dirZ * range(rng, 45, 60);
+    if (bz < -175 || bz > 178) { blockTimer = 5; return; }
+    const cars = [];
+    for (const [off, ang] of [[-2.1, 0.61], [2.1, -0.61]]) {
+      const c = createCar(scene, 0xffffff, { police: true });
+      c.driver = 'police';
+      c.isBlock = true;
+      c.pos.set(avenue + off, 0, bz + off * 0.8);
+      c.heading = Math.PI / 2 + ang;
+      c.mesh.rotation.y = c.heading;
+      cars.push(c);
+    }
+    block = { cars, x: avenue, z: bz };
+    blockTimer = 14;
+  }
+
+  function starsFor(h) {
+    let s = 0;
+    for (const th of WANTED.thresholds) if (h >= th) s++;
+    return Math.min(5, s);
+  }
+
+  function removeUnit(unit) {
+    scene.remove(unit.mesh);
+    const i = units.indexOf(unit);
+    if (i >= 0) units.splice(i, 1);
+  }
+
+  function spawnUnit(tx, tz) {
     for (let tries = 0; tries < 8; tries++) {
-      const a = avenues[Math.floor(rng() * avenues.length)];
-      const alongZ = rng() < 0.5;
-      const along = Math.max(-CITY.half, Math.min(CITY.half, (alongZ ? playerPos.z : playerPos.x) + (rng() < 0.5 ? -95 : 95)));
-      const x = alongZ ? a : along;
-      const z = alongZ ? along : a;
-      if (Math.hypot(x - playerPos.x, z - playerPos.z) < 55) continue;
-      const unit = makeCar(scene, rng, { color: 0xffffff, police: true, x, z, heading: 0, driver: 'police' });
-      unit.targetSpeed = 15;
+      const a = pick(rng, AVENUES);
+      const vertical = rng() < 0.65;
+      let x;
+      let z;
+      if (vertical) {
+        x = a;
+        z = Math.max(-178, Math.min(178, tz + (rng() < 0.5 ? -1 : 1) * range(rng, WANTED.spawnDistance, 95)));
+      } else {
+        z = a;
+        x = Math.max(-178, Math.min(178, tx + (rng() < 0.5 ? -1 : 1) * range(rng, WANTED.spawnDistance, 95)));
+      }
+      if (Math.hypot(x - tx, z - tz) < WANTED.spawnDistance) continue;
+      const unit = createCar(scene, 0xffffff, { police: true });
+      unit.driver = 'police';
+      unit.pos.set(x, 0, z);
+      unit.heading = Math.atan2(tx - x, tz - z);
+      unit.mesh.rotation.y = unit.heading;
       units.push(unit);
       return;
     }
   }
 
-  function removeUnit(unit) {
-    scene.remove(unit.mesh);
-    units.splice(units.indexOf(unit), 1);
-  }
+  const police = {
+    get heat() { return heat; },
+    get stars() { return stars; },
+    get seen() { return seenNow; },
+    get bustedTimer() { return bustedTimer; },
+    units,
+    roadblockCars() { return block ? block.cars : []; },
 
-  let flash = 0;
-  police.update = (dt, playerPos, playerSpeed, playerInCar) => {
-    // --- who can see the player right now? ------------------------------
-    police.seen = false;
-    for (const u of units) {
-      if (Math.hypot(u.pos.x - playerPos.x, u.pos.z - playerPos.z) < 52) { police.seen = true; break; }
-    }
-    if (police.seen && police.heat > 0) police.heat = Math.min(1, police.heat + WANTED.seenBuildPerSecond * dt * police.stars);
-    if (!police.seen) police.heat = Math.max(0, police.heat - WANTED.decayPerSecond * dt * (police.stars >= 4 ? 0.45 : 1));
-    police.stars = starsFor(police.heat);
+    addHeat(n) {
+      heat = Math.max(0, Math.min(1, heat + n));
+    },
+    setHeat(v) {
+      heat = Math.max(heat, Math.min(1, v));
+    },
+    clearHeat() {
+      heat = 0;
+      bustedTimer = 0;
+      clearBlock();
+      while (units.length) removeUnit(units[0]);
+    },
+    reset() {
+      this.clearHeat();
+    },
+    nearestDistance(x, z) {
+      let best = Infinity;
+      for (const u of units) best = Math.min(best, Math.hypot(u.pos.x - x, u.pos.z - z));
+      return best;
+    },
 
-    // --- fleet size follows the stars ------------------------------------
-    const wanted = WANTED.policePerStar[police.stars];
-    if (units.length < wanted) spawnUnit(playerPos);
-    else if (units.length > wanted) {
-      // the farthest unit gives up first
-      let far = null, farD = -1;
-      for (const u of units) {
-        const d = Math.hypot(u.pos.x - playerPos.x, u.pos.z - playerPos.z);
-        if (d > farD) { farD = d; far = u; }
+    // ctx: where the player is (foot or car), how fast, and whether a crime
+    // is happening right now in view
+    update(dt, ctx) {
+      t += dt;
+      stars = starsFor(heat);
+      const seen = units.some((u) => Math.hypot(u.pos.x - ctx.x, u.pos.z - ctx.z) < 58);
+      seenNow = seen;
+      if (stars > 0) {
+        if (seen) {
+          heat = Math.min(1, heat + WANTED.buildWhenSeen * dt * (ctx.crime ? 1 : 0.3));
+        } else {
+          heat = Math.max(0, heat - WANTED.decayByStar[stars] * dt);
+        }
+        stars = starsFor(heat);
       }
-      if (far && farD > 30) removeUnit(far);
-    }
-    hooks.siren(units.length > 0 && police.stars > 0);
 
-    // --- pursuit ----------------------------------------------------------
-    flash += dt * 7;
-    let boxing = 0;
-    for (const u of units) {
-      const dx = playerPos.x - u.pos.x, dz = playerPos.z - u.pos.z;
-      const dist = Math.hypot(dx, dz);
-      // aim a little ahead of a moving player, straight at a slow one
-      const lead = Math.min(0.7, dist / 60);
-      const tx = playerPos.x, tz = playerPos.z;
-      const targetHeading = Math.atan2(tx - u.pos.x, tz - u.pos.z);
-      let dh = targetHeading - u.heading;
-      while (dh > Math.PI) dh -= Math.PI * 2;
-      while (dh < -Math.PI) dh += Math.PI * 2;
-      const throttle = dist > 7 ? 1 : dist > 3.4 ? 0.25 : -0.4;
-      driveCar(u, { throttle, steer: Math.max(-1, Math.min(1, dh * 1.9)), brake: false, handbrake: Math.abs(dh) > 2.2 }, dt, world);
-      u.mesh.userData.barR.material.color.setHSL(0, 1, Math.sin(flash) > 0 ? 0.55 : 0.25);
-      u.mesh.userData.barB.material.color.setHSL(0.66, 1, Math.sin(flash) > 0 ? 0.25 : 0.55);
-      if (dist < 7.5) boxing++;
-    }
+      const desired = WANTED.policePerStar[stars];
+      spawnTimer -= dt;
+      if (units.length < desired && spawnTimer <= 0) {
+        spawnUnit(ctx.x, ctx.z);
+        spawnTimer = 0.45;
+      }
+      if (units.length > desired) {
+        let far = null;
+        let farD = -1;
+        for (const u of units) {
+          const d = Math.hypot(u.pos.x - ctx.x, u.pos.z - ctx.z);
+          if (d > farD) { farD = d; far = u; }
+        }
+        if (far && (farD > WANTED.despawnDistance || stars === 0)) removeUnit(far);
+      }
 
-    // --- BUSTED: boxed in and barely moving, with a unit right there ------
-    const slowEnough = playerInCar ? playerSpeed < 1.6 : playerSpeed < 2.2;
-    if (police.stars > 0 && boxing > 0 && slowEnough) {
-      police.bustedTimer += dt;
-      if (police.bustedTimer >= WANTED.bustedSeconds) police.busted = true;
-    } else {
-      police.bustedTimer = Math.max(0, police.bustedTimer - dt * 1.6);
-    }
-    return police;
+      const flashPhase = Math.floor(t * 5.5) % 2 === 0;
+      for (const u of units) {
+        const d = Math.hypot(ctx.x - u.pos.x, ctx.z - u.pos.z);
+        let throttle = 1;
+        if (d < 5) throttle = -0.4;
+        else if (d < 9 && !ctx.inCar) throttle = 0.22;
+        else if (d < 16) throttle = 0.55;
+        driveCar(u, {
+          throttle,
+          steer: steerToward(u, ctx.x, ctx.z, 1.5),
+          brake: d < 3.6,
+          handbrake: false,
+        }, dt, world);
+        if (u.mesh.userData.barR) {
+          u.mesh.userData.barR.material.color.setHex(flashPhase ? 0xff2d20 : 0x5c130e);
+          u.mesh.userData.barB.material.color.setHex(flashPhase ? 0x123a8a : 0x2d6bff);
+        }
+      }
+
+      // roadblocks: at 3+ stars the bay tries to close the avenue ahead
+      if (stars >= 3) {
+        blockTimer -= dt;
+        if (!block && blockTimer <= 0 && ctx.inCar) placeBlock(ctx);
+      } else if (block) {
+        clearBlock();
+      }
+      if (block) {
+        for (const c of block.cars) {
+          if (c.mesh.userData.barR) {
+            c.mesh.userData.barR.material.color.setHex(flashPhase ? 0xff2d20 : 0x5c130e);
+            c.mesh.userData.barB.material.color.setHex(flashPhase ? 0x123a8a : 0x2d6bff);
+          }
+          const dx = ctx.pos.x - c.pos.x;
+          const dz = ctx.pos.z - c.pos.z;
+          const dist = Math.hypot(dx, dz);
+          const minD = ctx.inCar ? 3.1 : 2.4;
+          if (dist > 0.01 && dist < minD) {
+            const push = (minD - dist) / dist;
+            ctx.pos.x += dx * push;
+            ctx.pos.z += dz * push;
+            if (ctx.car) { ctx.car.vel.x *= 0.4; ctx.car.vel.z *= 0.4; }
+          }
+        }
+        if (Math.hypot(ctx.x - block.x, ctx.z - block.z) > 95) clearBlock();
+      }
+
+      if (ctx.speed < 1.25 && units.some((u) => Math.hypot(u.pos.x - ctx.x, u.pos.z - ctx.z) < WANTED.bustedRange)) {
+        bustedTimer += dt;
+        if (bustedTimer >= WANTED.bustedSeconds) {
+          bustedTimer = 0;
+          hooks.onBusted();
+        }
+      } else {
+        bustedTimer = Math.max(0, bustedTimer - dt * 1.6);
+      }
+
+      const wantSiren = stars >= 1 && units.length > 0;
+      if (wantSiren !== sirenOn) {
+        sirenOn = wantSiren;
+        hooks.siren(wantSiren);
+      }
+    },
   };
 
-  police.units = units;
-  police.reset = () => { while (units.length) removeUnit(units[0]); police.clearHeat(); };
   return police;
 }

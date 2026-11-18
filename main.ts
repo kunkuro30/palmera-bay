@@ -1,13 +1,14 @@
 // PALMERA BAY — Hot Pursuit: a gta6-01 entry (Node 22, standard library only).
-// The game is this directory's game/ folder: a 3D open-world crime game in
-// plain static files a desktop browser loads offline — a sunset coastal city
-// with traffic and pedestrians, cars to steal and drive, a five-star wanted
-// system with pursuing police, three story jobs, dispatch fares, collectibles,
-// combat, a HUD with a minimap and a localStorage save (three.js is vendored
-// under game/vendor/ as a *.min.js and never counted as our source). This
-// program hands the entry in: it copies game/ and screenshots/ from beside
-// this file to /output and writes /output/dossier.json, the summary the judge
-// reads, with the vendored make.fun library.
+// The game is this directory's game/ folder: an original 3D open-world crime
+// game in plain static files a desktop browser loads offline — a sunset
+// coastal city on foot and by car, traffic and pedestrians, a five-star
+// wanted system with pursuing police and roadblocks, three story jobs for
+// Marina Sol, taxi dispatch, golden cases, fists-and-pistol combat, a HUD
+// with a GPS minimap, synthesized sound and a localStorage save (three.js is
+// vendored under game/vendor/ as a *.min.js and never counted as our source).
+// This program hands the entry in: it copies game/ and screenshots/ from
+// beside this file to /output and writes /output/dossier.json, the summary
+// the judge reads, with the vendored make.fun library.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:

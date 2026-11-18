@@ -1,22 +1,24 @@
-// random.js — a tiny seeded RNG so the city, traffic and screenshot scenes are
-// identical on every load with the same seed (the screenshot staging needs it).
+// random.js — a small seeded RNG so a given seed always builds the same bay.
 
 export function makeRng(seed) {
-  let state = (seed >>> 0) || 1;
-  return function next() {
-    // mulberry32
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  let a = (seed >>> 0) || 1;
+  return function rng() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-export function pick(rng, list) {
-  return list[Math.floor(rng() * list.length) % list.length];
+export function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length)];
 }
 
-export function range(rng, min, max) {
-  return min + rng() * (max - min);
+export function range(rng, lo, hi) {
+  return lo + rng() * (hi - lo);
+}
+
+export function rangeInt(rng, lo, hi) {
+  return Math.floor(range(rng, lo, hi + 1));
 }

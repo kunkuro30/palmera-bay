@@ -1,115 +1,141 @@
-// combat.js — fists and the pistol: the crosshair, the shot itself (a manual
-// ray tested against people, cars and the building boxes, so no scene-wide
-// raycast is needed), the muzzle flash and tracer, and who got hurt.
-// Consequences (heat, money, story) belong to main.js; this module reports.
+// combat.js — fists and a pistol. It works out what an attack hits and hands
+// back an event; what the hit *means* (damage, witnesses, heat) is decided by
+// the caller in main.js, using the helpers on the ped and car objects.
 
-import { PLAYER } from './config.js';
+const FIST_RANGE = 2.1;
+const FIST_ARC = 0.65;
+export const FIST_DAMAGE = 16;
+export const SHOT_PED_DAMAGE = 34;
+export const SHOT_CAR_DAMAGE = 12;
 
-export function createCombat(scene, audio) {
-  const cross = document.createElement('div');
-  cross.style.cssText = 'position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;' +
-    'border:2px solid rgba(255,255,255,.85);border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,.6);' +
-    'pointer-events:none;display:none;z-index:4;';
-  document.body.appendChild(cross);
+function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) {
+  const lx = cx - ox;
+  const ly = cy - oy;
+  const lz = cz - oz;
+  const tca = lx * dx + ly * dy + lz * dz;
+  if (tca < 0) return -1;
+  const d2 = lx * lx + ly * ly + lz * lz - tca * tca;
+  const r2 = r * r;
+  if (d2 > r2) return -1;
+  return tca - Math.sqrt(r2 - d2);
+}
 
-  const flash = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.7, 0.7),
-    new THREE.MeshBasicMaterial({ color: 0xffd76a, transparent: true, opacity: 0, depthWrite: false }),
-  );
-  flash.visible = false;
-  scene.add(flash);
+function rayBox(ox, oy, oz, dx, dy, dz, c) {
+  let tmin = 0;
+  let tmax = Infinity;
+  const axes = [
+    [ox, dx, c.minX, c.maxX],
+    [oy, dy, 0, 48],
+    [oz, dz, c.minZ, c.maxZ],
+  ];
+  for (const [o, d, lo, hi] of axes) {
+    if (Math.abs(d) < 1e-8) {
+      if (o < lo || o > hi) return -1;
+    } else {
+      let t1 = (lo - o) / d;
+      let t2 = (hi - o) / d;
+      if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return -1;
+    }
+  }
+  return tmin;
+}
+
+export function createCombat(scene) {
   const tracerMat = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0 });
   const tracerGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
   const tracer = new THREE.Line(tracerGeo, tracerMat);
-  tracer.visible = false;
+  tracer.frustumCulled = false;
   scene.add(tracer);
+  const flash = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0 }),
+  );
+  scene.add(flash);
+  let tracerLife = 0;
+  let flashLife = 0;
 
-  const combat = { weapon: 'fists', cooldown: 0, flashTimer: 0 };
+  function showShot(from, to) {
+    const p = tracerGeo.attributes.position;
+    p.setXYZ(0, from.x, from.y, from.z);
+    p.setXYZ(1, to.x, to.y, to.z);
+    p.needsUpdate = true;
+    tracerLife = 0.07;
+    flash.position.copy(from);
+    flashLife = 0.045;
+  }
 
-  combat.setWeapon = (w) => {
-    combat.weapon = w;
-    cross.style.display = w === 'pistol' ? 'block' : 'none';
-  };
-  combat.showCrosshair = (show) => {
-    cross.style.display = show && combat.weapon === 'pistol' ? 'block' : 'none';
-  };
-
-  // One attack press. ctx: { player, camera, peds, cars, colliders, onCrime }
-  combat.attack = (ctx) => {
-    if (combat.cooldown > 0) return null;
-    const { player, peds } = ctx;
-    if (combat.weapon === 'fists') {
-      combat.cooldown = 0.38;
-      audio.punch();
-      const fx = Math.sin(player.heading), fz = Math.cos(player.heading);
-      for (const p of peds) {
-        if (p.down > 0) continue;
-        const dx = p.pos.x - player.pos.x, dz = p.pos.z - player.pos.z;
-        if (Math.hypot(dx, dz) < PLAYER.punchRange && dx * fx + dz * fz > 0.2) {
-          p.health -= PLAYER.punchDamage;
-          if (p.health <= 0) { p.down = 4; p.mesh.rotation.x = Math.PI / 2; }
-          return { type: 'punch', ped: p };
+  return {
+    // origin: the shooter's position; aim: a normalised 3D direction
+    attack({ weapon, origin, aim, peds, cars, world }) {
+      if (weapon === 'fists') {
+        let bestPed = null;
+        let bestD = FIST_RANGE;
+        for (const ped of peds) {
+          if (ped.state === 'down') continue;
+          const dx = ped.pos.x - origin.x;
+          const dz = ped.pos.z - origin.z;
+          const d = Math.hypot(dx, dz);
+          if (d > bestD) continue;
+          const dot = (dx * aim.x + dz * aim.z) / (d || 1);
+          if (dot > Math.cos(FIST_ARC)) { bestPed = ped; bestD = d; }
         }
+        if (bestPed) return { type: 'punch', ped: bestPed };
+        for (const car of cars) {
+          const d = Math.hypot(car.pos.x - origin.x, car.pos.z - origin.z);
+          if (d < 3.1) return { type: 'punchCar', car };
+        }
+        return { type: 'swing' };
       }
-      return { type: 'swing' };
-    }
-    // pistol
-    combat.cooldown = 0.27;
-    audio.shot();
-    const origin = new THREE.Vector3();
-    ctx.camera.getWorldPosition(origin);
-    const dir = new THREE.Vector3();
-    ctx.camera.getWorldDirection(dir);
-    const muzzle = player.pos.clone(); muzzle.y += 1.35;
-    muzzle.x += Math.sin(player.heading) * 0.5; muzzle.z += Math.cos(player.heading) * 0.5;
-    flash.position.copy(muzzle);
-    flash.lookAt(muzzle.clone().add(dir));
-    flash.material.opacity = 0.95; flash.visible = true;
-    combat.flashTimer = 0.05;
 
-    let bestT = 220, hit = null;
-    const ray = new THREE.Ray(origin, dir);
-    const testSphere = (cx, cy, cz, r, what, ref) => {
-      const c = new THREE.Vector3(cx, cy, cz);
-      const t = ray.distanceToPoint(c);
-      if (t < 0 || t > bestT) return;
-      const closest = ray.at(t, new THREE.Vector3());
-      if (closest.distanceTo(c) < r) { bestT = t; hit = { what, ref, point: closest }; }
-    };
-    for (const p of peds) if (p.down <= 0) testSphere(p.pos.x, 1.05, p.pos.z, 0.85, 'ped', p);
-    for (const c of ctx.cars) testSphere(c.pos.x, 0.8, c.pos.z, 2.5, c.police ? 'policecar' : 'car', c);
-    for (const b of ctx.colliders) {
-      const box = new THREE.Box3(
-        new THREE.Vector3(b.minX, 0, b.minZ), new THREE.Vector3(b.maxX, 90, b.maxZ));
-      const p = ray.intersectBox(box, new THREE.Vector3());
-      if (p) {
-        const t = origin.distanceTo(p);
-        if (t < bestT) { bestT = t; hit = { what: 'wall', point: p }; }
+      // pistol: nearest of ped / car / building / ground along the ray
+      const o = { x: origin.x, y: origin.y, z: origin.z };
+      let bestT = 130;
+      let hit = { type: 'shot', hit: 'none' };
+      for (const ped of peds) {
+        if (ped.state === 'down') continue;
+        const t = raySphere(o.x, o.y, o.z, aim.x, aim.y, aim.z, ped.pos.x, 1.1, ped.pos.z, 0.62);
+        if (t > 0 && t < bestT) { bestT = t; hit = { type: 'shot', hit: 'ped', ped }; }
       }
-    }
-    const end = hit ? hit.point : origin.clone().add(dir.clone().multiplyScalar(120));
-    const posAttr = tracer.geometry.getAttribute('position');
-    posAttr.setXYZ(0, muzzle.x, muzzle.y, muzzle.z);
-    posAttr.setXYZ(1, end.x, end.y, end.z);
-    posAttr.needsUpdate = true;
-    tracerMat.opacity = 0.85; tracer.visible = true;
-    combat.flashTimer = Math.max(combat.flashTimer, 0.06);
+      for (const car of cars) {
+        const t = raySphere(o.x, o.y, o.z, aim.x, aim.y, aim.z, car.pos.x, 0.75, car.pos.z, 2.35);
+        if (t > 0 && t < bestT) { bestT = t; hit = { type: 'shot', hit: 'car', car }; }
+      }
+      for (const c of world.colliders) {
+        const t = rayBox(o.x, o.y, o.z, aim.x, aim.y, aim.z, c);
+        if (t > 0 && t < bestT) { bestT = t; hit = { type: 'shot', hit: 'world' }; }
+      }
+      if (aim.y < -0.001) {
+        const t = -o.y / aim.y;
+        if (t > 0 && t < bestT) { bestT = t; hit = { type: 'shot', hit: 'world' }; }
+      }
+      const end = {
+        x: o.x + aim.x * bestT,
+        y: o.y + aim.y * bestT,
+        z: o.z + aim.z * bestT,
+      };
+      hit.point = end;
+      const muzzle = {
+        x: origin.x + aim.x * 0.55,
+        y: origin.y - 0.12,
+        z: origin.z + aim.z * 0.55,
+      };
+      showShot(muzzle, end);
+      return hit;
+    },
 
-    if (hit && hit.what === 'ped') {
-      hit.ref.health -= 34;
-      if (hit.ref.health <= 0) { hit.ref.down = 5; hit.ref.mesh.rotation.x = Math.PI / 2; }
-    } else if (hit && (hit.what === 'car' || hit.what === 'policecar')) {
-      hit.ref.health -= 12;
-    }
-    return { type: 'shot', hit };
+    update(dt) {
+      if (tracerLife > 0) {
+        tracerLife -= dt;
+        tracerMat.opacity = Math.max(0, tracerLife / 0.07) * 0.9;
+      }
+      if (flashLife > 0) {
+        flashLife -= dt;
+        flash.material.opacity = Math.max(0, flashLife / 0.045);
+        flash.scale.setScalar(1 + (0.045 - flashLife) * 14);
+      }
+    },
   };
-
-  combat.update = (dt) => {
-    combat.cooldown = Math.max(0, combat.cooldown - dt);
-    if (combat.flashTimer > 0) {
-      combat.flashTimer -= dt;
-      if (combat.flashTimer <= 0) { flash.visible = false; tracer.visible = false; }
-    }
-  };
-  return combat;
 }
