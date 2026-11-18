@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%23ffb347'/%3E%3Crect y='24' width='32' height='8' fill='%232b6cb0'/%3E%3C/svg%3E">
+<title>PALMERA BAY — Hot Pursuit</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#1a0f1e;
+    font-family:"Trebuchet MS","Segoe UI",Verdana,sans-serif; color:#fff; }
+  #game-canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  /* ---------- HUD ---------- */
+  #hud { position:absolute; inset:0; pointer-events:none; display:none; }
+  #minimap-wrap { position:absolute; left:18px; top:18px; width:188px; height:188px;
+    border:3px solid rgba(255,255,255,.85); border-radius:12px; overflow:hidden;
+    box-shadow:0 4px 18px rgba(0,0,0,.45); background:#274b63; }
+  #minimap { width:188px; height:188px; display:block; }
+  #clock-box { position:absolute; left:18px; top:216px; padding:4px 12px; border-radius:8px;
+    background:rgba(10,10,25,.55); font-weight:700; letter-spacing:.08em; font-size:15px; }
+  #wanted { position:absolute; right:22px; top:14px; font-size:34px; letter-spacing:4px;
+    color:#ffd94a; text-shadow:0 0 10px rgba(255,180,0,.8), 0 2px 3px #000; }
+  #wanted .off { color:rgba(255,255,255,.22); text-shadow:none; }
+  #money { position:absolute; right:22px; top:58px; font-size:26px; font-weight:800; color:#7dff8a;
+    text-shadow:0 2px 4px #000; letter-spacing:.03em; }
+  #health-wrap { position:absolute; right:22px; top:96px; width:190px; height:16px; border:2px solid rgba(255,255,255,.8);
+    border-radius:8px; background:rgba(0,0,0,.45); overflow:hidden; }
+  #health-bar { height:100%; width:100%; background:linear-gradient(90deg,#ff5f6d,#ffc371); transition:width .15s; }
+  #mission-banner { position:absolute; top:16px; left:50%; transform:translateX(-50%); max-width:520px;
+    text-align:center; padding:8px 18px; border-radius:10px; background:rgba(10,10,25,.55);
+    font-size:16px; line-height:1.35; display:none; }
+  #mission-banner b { color:#ffd94a; }
+  #prompt { position:absolute; bottom:110px; left:50%; transform:translateX(-50%); padding:8px 20px;
+    border-radius:10px; background:rgba(10,10,25,.65); font-size:17px; font-weight:700; display:none; }
+  #toast { position:absolute; bottom:160px; left:50%; transform:translateX(-50%); padding:10px 24px;
+    border-radius:10px; background:rgba(255,170,40,.92); color:#241203; font-size:19px; font-weight:800;
+    display:none; box-shadow:0 6px 20px rgba(0,0,0,.4); }
+  #speedo { position:absolute; right:26px; bottom:24px; text-align:right; display:none; }
+  #speedo .num { font-size:44px; font-weight:900; text-shadow:0 3px 6px #000; }
+  #speedo .unit { font-size:14px; letter-spacing:.2em; opacity:.85; }
+  #controls-hint { position:absolute; left:18px; bottom:16px; font-size:12.5px; line-height:1.5;
+    background:rgba(10,10,25,.5); padding:8px 12px; border-radius:8px; }
+  /* ---------- Screens ---------- */
+  .screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; text-align:center; z-index:5; }
+  #title-screen { background:linear-gradient(180deg, rgba(255,94,98,.28), rgba(26,15,30,.78) 70%); }
+  #title-screen h1 { font-size:74px; margin:0; letter-spacing:.04em; font-weight:900;
+    background:linear-gradient(180deg,#ffe259,#ffa751 55%,#ff5e62); -webkit-background-clip:text;
+    background-clip:text; color:transparent; filter:drop-shadow(0 4px 0 rgba(60,10,40,.55)); }
+  #title-screen h2 { margin:2px 0 10px; font-size:27px; letter-spacing:.42em; font-weight:700; color:#ffe9b0;
+    text-shadow:0 2px 6px #000; }
+  #title-screen p { max-width:560px; font-size:16.5px; line-height:1.55; color:#ffeedd; text-shadow:0 1px 3px #000; }
+  .big-btn { pointer-events:auto; cursor:pointer; margin-top:18px; padding:14px 44px; font-size:21px; font-weight:900;
+    letter-spacing:.12em; color:#2a1503; background:linear-gradient(180deg,#ffd94a,#ff9d2e); border:none;
+    border-radius:12px; box-shadow:0 8px 22px rgba(0,0,0,.5); }
+  .big-btn:hover { filter:brightness(1.08); }
+  #end-screen { display:none; background:rgba(20,4,10,.72); }
+  #end-screen h1 { font-size:64px; margin:0; letter-spacing:.14em; }
+  #end-screen p { font-size:19px; }
+  #pause-screen { display:none; background:rgba(10,8,20,.66); }
+  #pause-screen h1 { font-size:44px; letter-spacing:.2em; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud">
+  <div id="minimap-wrap"><canvas id="minimap" width="188" height="188"></canvas></div>
+  <div id="clock-box">18:00</div>
+  <div id="wanted"></div>
+  <div id="money">$0</div>
+  <div id="health-wrap"><div id="health-bar"></div></div>
+  <div id="mission-banner"></div>
+  <div id="prompt"></div>
+  <div id="toast"></div>
+  <div id="speedo"><div class="num">0</div><div class="unit">KM/H</div></div>
+  <div id="controls-hint">WASD move &middot; SHIFT run &middot; F enter/exit car &middot; SPACE handbrake<br>
+    LMB punch / shoot &middot; 1 fists &middot; 2 pistol &middot; P pause &middot; M mute</div>
+</div>
+
+<div id="title-screen" class="screen">
+  <h1>PALMERA BAY</h1>
+  <h2>HOT PURSUIT</h2>
+  <p>One coastal city, one courier with a past, and every cop in the bay on your tail.
+     Steal cars, run the three jobs for Marina Sol, dodge the heat &mdash; and own the sunset.</p>
+  <button class="big-btn" id="start-btn">START ENGINE</button>
+  <p style="font-size:13.5px; opacity:.85">New game starts fresh &middot; progress auto-saves to this browser</p>
+</div>
+
+<div id="end-screen" class="screen">
+  <h1 id="end-title">BUSTED</h1>
+  <p id="end-text"></p>
+  <button class="big-btn" id="respawn-btn">TRY AGAIN</button>
+</div>
+
+<div id="pause-screen" class="screen">
+  <h1>PAUSED</h1>
+  <p>Press P to keep playing. Your money, jobs and collectibles are saved.</p>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
