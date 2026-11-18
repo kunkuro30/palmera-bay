@@ -1,188 +1,165 @@
-// shots.js — deterministic screenshot staging behind ?shot=<name>&seed=<n>.
-// Each scene places the real actors, then steps the real systems (driving,
-// traffic, pedestrians, HUD) in fixed 1/60 steps, so the frame the shutter
-// catches is the game itself, staged — never a mock-up.
+// The screenshot scenes behind ?shot=chase|downtown|drive|heist (with &seed=N). Each one
+// stages the real game — the player's car, police units, the HUD state — then advances
+// traffic, pedestrians and lightbars for a fixed number of frames while a per-scene
+// camera holds the composition, so the frame is what play really looks like and the
+// same seed always gives the same frame.
+import { LOCKUP, MISSION2_CAR } from './config.js';
+import { makeCar } from './vehicles.js';
 
-import { createCar, driveCar, steerToward, forwardOf } from './vehicles.js';
+const THREE = window.THREE;
 
-function flashBars(car, t) {
-  if (!car.mesh.userData.barR) return;
-  const phase = Math.floor(t * 5.5) % 2 === 0;
-  car.mesh.userData.barR.material.color.setHex(phase ? 0xff2d20 : 0x5c130e);
-  car.mesh.userData.barB.material.color.setHex(phase ? 0x123a8a : 0x2d6bff);
+function flashLights(G) {
+  for (const unit of G.police.units) {
+    if (!unit.car.lights) continue;
+    const on = Math.sin(G.time * 9 + unit.phase) > 0;
+    unit.car.lights.red.visible = on;
+    unit.car.lights.blue.visible = !on;
+  }
 }
 
-function trafficBlips(traffic, extraPolice = []) {
-  const blips = traffic.cars.map((c) => ({ x: c.pos.x, z: c.pos.z, police: false }));
-  for (const c of extraPolice) blips.push({ x: c.pos.x, z: c.pos.z, police: true, heading: c.heading });
-  return blips;
+function spinWheels(car, dt) {
+  const spin = (car.speed * dt) / 0.37;
+  for (const w of car.wheels) w.rotation.x += spin;
 }
 
-export function stageCamera(name, camera) {
-  camera.position.set(120, 42, 335);
-  camera.lookAt(0, 12, 0);
+function setCam(G, x, y, z, lx, ly, lz) {
+  G.camera.position.set(x, y, z);
+  G.camera.lookAt(lx, ly, lz);
 }
 
-export function stageActionShot(name, api) {
-  const { scene, camera, world, traffic, peds, player, hud } = api;
-  let t = 0;
+function ambient(G, dt) {
+  G.vehicles.update(dt);
+  G.pedsSys.update(dt);
+  flashLights(G);
+}
 
-  if (name === 'chase') {
-    const car = traffic.sports;
-    car.parked = false;
-    car.driver = 'player';
-    car.pos.set(55.3, 0, 78);
-    car.heading = Math.PI;
-    car.vel.x = 0;
-    car.vel.z = -15;
-    car.mesh.rotation.y = car.heading;
-    for (const other of traffic.cars) {
-      if (other !== car && Math.abs(other.pos.x - 53) < 9 && other.pos.z > 0 && other.pos.z < 130) {
-        other.pos.x -= 200;
-      }
-    }
-    const cops = [];
-    for (const [x, z] of [[55.3, 88], [50.8, 97]]) {
-      const cop = createCar(scene, 0xffffff, { police: true });
-      cop.driver = 'police';
-      cop.pos.set(x, 0, z);
-      cop.heading = Math.PI;
-      cop.vel.z = -16;
-      cop.mesh.rotation.y = cop.heading;
-      cops.push(cop);
-    }
-    player.driving = car;
-    player.mesh.visible = false;
-    hud.showBanner('<b>JOB 2 — HOT GOODS</b> — deliver the car to the <b>east lockup</b>. Lose them or outrun them.', 999);
-    return {
-      step(dt) {
-        t += dt;
-        driveCar(car, { throttle: 0.55, steer: Math.sin(t * 0.7) * 0.05, brake: false, handbrake: false }, dt, world);
-        for (const cop of cops) {
-          driveCar(cop, { throttle: 1, steer: steerToward(cop, car.pos.x, car.pos.z, 1.5), brake: false, handbrake: false }, dt, world);
-          flashBars(cop, t);
-        }
-        traffic.update(dt);
-        peds.update(dt);
-        world.update(dt);
-        const f = forwardOf(car.heading);
-        camera.position.set(
-          car.pos.x - f.x * 17 + -Math.cos(car.heading) * 4.6,
-          5.4,
-          car.pos.z - f.z * 17 + Math.sin(car.heading) * 4.6,
-        );
-        camera.lookAt(car.pos.x + f.x * 10, 1.2, car.pos.z + f.z * 10);
-        hud.update({
-          money: 570, health: 88, stars: 3, hour: 17.85,
-          speedKmh: car.speed * 3.6,
-          player: { x: car.pos.x, z: car.pos.z, heading: car.heading },
-          markers: [{ x: 128, z: 66, color: '#ffd94a' }],
-          blips: trafficBlips(traffic, cops),
-          seenByPolice: true, searching: false,
-        }, dt);
-      },
-    };
-  }
+function chase(G) {
+  const scene = G.scene;
+  // The cover wants a touch more light than live play: lift the exposure for this scene.
+  G.renderer.toneMappingExposure = 1.34;
+  const car = makeCar(0xd42427, { cls: 'sport', kind: 'mission' });
+  car.group.position.set(-4, 0, 48);
+  car.heading = Math.PI;
+  car.group.rotation.y = Math.PI;
+  car.speed = 15.3;
+  scene.add(car.group);
+  G.cars.push(car);
+  G.player.car = car;
+  G.player.group.visible = false;
+  const u1 = G.police.spawnUnitAt(-4, 39.5, Math.PI);
+  const u2 = G.police.spawnUnitAt(-2.4, 48, Math.PI);
+  u1.car.speed = 15.3;
+  u2.car.speed = 15.3;
+  G.police.heat = 250;
+  G.police.stars = 3;
+  G.police.seen = true;
+  G.save.cash = 570;
+  G.missions.setObjectiveOverride({
+    x: LOCKUP.x, z: LOCKUP.z, letter: 'D',
+    label: 'JOB 2 — HOT GOODS · Deliver the car to the east lockup',
+  });
+  return {
+    frame(dt) {
+      const p = car.group.position;
+      p.x += Math.sin(car.heading) * car.speed * dt;
+      p.z += Math.cos(car.heading) * car.speed * dt;
+      spinWheels(car, dt);
+      const back = (unit, off, lat) => {
+        // The chase heads north (-z), so the cruisers hold station behind at +z.
+        unit.car.group.position.set(p.x + lat, 0, p.z + off);
+        spinWheels(unit.car, dt);
+      };
+      back(u1, 8.5, 0.4);
+      back(u2, 14.5, -2.6);
+      ambient(G, dt);
+      setCam(G, p.x - 3.8, 6.2, p.z + 27.5, p.x + 0.2, 0.9, p.z - 12);
+    },
+  };
+}
 
-  if (name === 'downtown') {
-    player.pos.set(2.8, 0, 34);
-    player.heading = Math.PI;
-    player.mesh.rotation.y = Math.PI;
-    hud.showBanner('<b>JOB 1 — FIRST RUN</b> — take the package to the <b>Sol Tower drop</b>, downtown.', 999);
-    return {
-      step(dt) {
-        t += dt;
-        player.updateOnFoot(dt, { x: 0, z: -1 }, false, world);
-        traffic.update(dt);
-        peds.update(dt);
-        world.update(dt);
-        camera.position.set(player.pos.x, 3.1, player.pos.z + 7);
-        camera.lookAt(player.pos.x - 1.5, 1.6, player.pos.z - 6);
-        hud.update({
-          money: 370, health: 100, stars: 0, hour: 17.8,
-          speedKmh: null,
-          player: { x: player.pos.x, z: player.pos.z, heading: player.heading },
-          markers: [{ x: 10, z: -14, color: '#ffd94a' }],
-          blips: trafficBlips(traffic),
-          seenByPolice: false, searching: false,
-        }, dt);
-      },
-    };
-  }
+function downtown(G) {
+  const scene = G.scene;
+  const player = G.player;
+  player.group.position.set(2.8, 0, 30);
+  player.facing = Math.PI;
+  player.group.rotation.y = Math.PI;
+  G.camYaw = Math.PI;
+  const car = makeCar(0xd42427, { cls: 'sport', kind: 'parked' });
+  car.group.position.set(MISSION2_CAR.x, 0, MISSION2_CAR.z);
+  car.heading = Math.PI;
+  car.group.rotation.y = Math.PI;
+  scene.add(car.group);
+  G.cars.push(car);
+  G.missions.setObjectiveOverride({
+    x: MISSION2_CAR.x, z: MISSION2_CAR.z, letter: 'C',
+    label: 'JOB 2 — HOT GOODS · Steal the marked sports car',
+  });
+  G.missions.showMarker(MISSION2_CAR.x, MISSION2_CAR.z, 'C');
+  return {
+    frame(dt) {
+      ambient(G, dt);
+      setCam(G, 2.8, 2.7, 37.2, 2.8, 1.5, 24);
+    },
+  };
+}
 
-  if (name === 'drive') {
-    const car = traffic.parked.find((c) => !c.isSports) || traffic.parked[0];
-    car.parked = false;
-    car.driver = 'player';
-    car.pos.set(-71, 0, 189.7);
-    car.heading = Math.PI / 2;
-    car.vel.x = 16;
-    car.vel.z = 0;
-    car.mesh.rotation.y = car.heading;
-    player.driving = car;
-    player.mesh.visible = false;
-    hud.showBanner('<b>DISPATCH</b> — fare waiting across town. Deliver and get paid.', 999);
-    return {
-      step(dt) {
-        t += dt;
-        driveCar(car, { throttle: 0.4, steer: 0, brake: false, handbrake: false }, dt, world);
-        traffic.update(dt);
-        peds.update(dt);
-        world.update(dt);
-        const f = forwardOf(car.heading);
-        camera.position.set(
-          car.pos.x + f.x * 7 - -Math.cos(car.heading) * 4.2,
-          2.4,
-          car.pos.z + f.z * 7 - Math.sin(car.heading) * 4.2,
-        );
-        camera.lookAt(car.pos.x, 1.1, car.pos.z);
-        hud.update({
-          money: 445, health: 100, stars: 0, hour: 17.9,
-          speedKmh: car.speed * 3.6,
-          player: { x: car.pos.x, z: car.pos.z, heading: car.heading },
-          markers: [{ x: 160, z: -20, color: '#54c8ff' }],
-          blips: trafficBlips(traffic),
-          seenByPolice: false, searching: false,
-        }, dt);
-      },
-    };
-  }
+function drive(G) {
+  const scene = G.scene;
+  const car = makeCar(0x1f8a8c, { cls: 'coupe', kind: 'mission' });
+  car.group.position.set(-58, 0, 195);
+  car.heading = Math.PI / 2;
+  car.group.rotation.y = Math.PI / 2;
+  car.speed = 20;
+  scene.add(car.group);
+  G.cars.push(car);
+  G.player.car = car;
+  G.player.group.visible = false;
+  return {
+    frame(dt) {
+      const p = car.group.position;
+      p.x += Math.sin(car.heading) * car.speed * dt;
+      p.z += Math.cos(car.heading) * car.speed * dt;
+      spinWheels(car, dt);
+      ambient(G, dt);
+      setCam(G, p.x + 11.5, 2.7, p.z - 7.5, p.x - 3, 0.9, p.z + 1.5);
+    },
+  };
+}
 
-  if (name === 'heist') {
-    player.pos.set(160, 0, 228);
-    player.heading = -Math.PI / 2;
-    player.mesh.rotation.y = player.heading;
-    const cops = [];
-    for (const [x, z, h] of [[129, 221, Math.PI / 2 - 0.55], [130, 236, Math.PI / 2 + 0.65]]) {
-      const cop = createCar(scene, 0xffffff, { police: true });
-      cop.driver = 'police';
-      cop.pos.set(x, 0, z);
-      cop.heading = h;
-      cop.mesh.rotation.y = h;
-      cops.push(cop);
-    }
-    hud.showBanner('<b>JOB 3 — HARBOUR HEIST</b> — get the money to <b>Marina\'s kiosk</b>. Half the bay will chase you.', 999);
-    return {
-      step(dt) {
-        t += dt;
-        player.updateOnFoot(dt, { x: -1, z: 0 }, true, world);
-        for (const cop of cops) flashBars(cop, t);
-        traffic.update(dt);
-        peds.update(dt);
-        world.update(dt);
-        camera.position.set(player.pos.x + 7.5, 3.0, player.pos.z);
-        camera.lookAt(player.pos.x - 8, 1.4, player.pos.z);
-        hud.update({
-          money: 1150, health: 76, stars: 4, hour: 17.95,
-          speedKmh: null,
-          player: { x: player.pos.x, z: player.pos.z, heading: player.heading },
-          markers: [{ x: -55, z: 208, color: '#ffd94a' }],
-          blips: trafficBlips(traffic, cops),
-          seenByPolice: true, searching: false,
-        }, dt);
-      },
-    };
-  }
+function heist(G) {
+  const scene = G.scene;
+  const player = G.player;
+  player.group.position.set(-60, 0, 182);
+  player.facing = Math.PI;
+  player.group.rotation.y = Math.PI;
+  const caseMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.34, 0.4),
+    new THREE.MeshLambertMaterial({ color: 0xd8a920, emissive: 0x5a4300 }),
+  );
+  caseMesh.position.set(0.4, 1.0, 0.25);
+  player.group.add(caseMesh);
+  const u1 = G.police.spawnUnitAt(-64.5, 175.5, Math.PI * 0.9);
+  const u2 = G.police.spawnUnitAt(-55, 174.5, Math.PI * 1.1);
+  const o1 = G.police.setOfficerOut(u1, -63, 179);
+  const o2 = G.police.setOfficerOut(u2, -56.5, 178.5);
+  o1.group.rotation.y = Math.atan2(-60 - -63, 182 - 179);
+  o2.group.rotation.y = Math.atan2(-60 - -56.5, 182 - 178.5);
+  G.police.heat = 350;
+  G.police.stars = 4;
+  G.police.seen = true;
+  G.save.cash = 845;
+  G.missions.setObjectiveOverride({ x: null, z: null, letter: '', label: 'BAY HEIST · Lose the police!' });
+  return {
+    frame(dt) {
+      ambient(G, dt);
+      setCam(G, -63.5, 2.9, 163, -59.5, 1.1, 180);
+    },
+  };
+}
 
-  return null;
+export function stageShot(name, G) {
+  if (name === 'downtown') return downtown(G);
+  if (name === 'drive') return drive(G);
+  if (name === 'heist') return heist(G);
+  return chase(G);
 }

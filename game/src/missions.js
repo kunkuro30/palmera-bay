@@ -1,274 +1,396 @@
-// missions.js — Marina Sol's work: three story jobs, eight golden cases
-// hidden around the bay, and the taxi dispatch that never sleeps. All state
-// lives in the save object; this module owns the props, the beacon and the
-// stage machine, and pays out through the hooks main.js gives it.
+// Missions and story: Marina Sol's three jobs (an errand, a hot car, a bay heist),
+// repeatable taxi fares, and eight hidden golden briefcases. One gold objective marker
+// (beam + floating letter) always points at the current goal; progress is written to
+// the save as each job lands.
+import { CASE_SPOTS, HEIST_CASE, LOCKUP, MARINA, MISSION2_CAR } from './config.js';
+import { clamp, pick, range } from './random.js';
+import { AVENUES } from './config.js';
+import { makeCar } from './vehicles.js';
+import { storeSave } from './save.js';
 
-import { ECONOMY } from './config.js';
-import { range, pick } from './random.js';
+const THREE = window.THREE;
 
-export const KIOSK = { x: -55, z: 208 };
-export const GARAGE = { x: 128, z: 66 };
-export const WAREHOUSE = { x: 150, z: 250 };
-const DROP = { x: 10, z: -14 };
-
-const CASE_SPOTS = [
-  { x: -97, z: 12 }, { x: 24, z: -97 }, { x: 83, z: 143 }, { x: -157, z: -64 },
-  { x: 143, z: -157 }, { x: -24, z: 83 }, { x: 66, z: -24 }, { x: -83, z: 238 },
-];
-
-function awningTexture() {
-  const c = document.createElement('canvas');
-  c.width = 128;
-  c.height = 32;
-  const g = c.getContext('2d');
-  for (let i = 0; i < 8; i++) {
-    g.fillStyle = i % 2 ? '#f3ead8' : '#e2543e';
-    g.fillRect(i * 16, 0, 16, 32);
-  }
-  const tex = new THREE.CanvasTexture(c);
+function letterSprite() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sprite.scale.set(3.6, 3.6, 1);
+  sprite.renderOrder = 20;
+  return { sprite, canvas, tex, letter: '' };
 }
 
-export function createMissions(scene, rng, world, save, hooks) {
-  // --- props ---------------------------------------------------------------
-  const kiosk = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x8a6844, roughness: 0.9 });
-  const counter = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.1, 1.7), wood);
-  counter.position.y = 0.55;
-  counter.castShadow = true;
-  kiosk.add(counter);
-  for (const [px, pz] of [[-1.9, -1.1], [1.9, -1.1], [-1.9, 1.1], [1.9, 1.1]]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.6, 6), wood);
-    post.position.set(px, 1.3, pz);
-    kiosk.add(post);
-  }
-  const awning = new THREE.Mesh(
-    new THREE.BoxGeometry(4.4, 0.12, 2.9),
-    new THREE.MeshStandardMaterial({ map: awningTexture(), roughness: 0.85 }),
-  );
-  awning.position.y = 2.65;
-  awning.castShadow = true;
-  kiosk.add(awning);
-  kiosk.position.set(KIOSK.x, 0, KIOSK.z);
-  scene.add(kiosk);
-  world.colliders.push({ minX: KIOSK.x - 2.2, maxX: KIOSK.x + 2.2, minZ: KIOSK.z - 1.5, maxZ: KIOSK.z + 1.5 });
+function drawLetter(marker, letter) {
+  if (marker.letter === letter) return;
+  marker.letter = letter;
+  const g = marker.canvas.getContext('2d');
+  g.clearRect(0, 0, 128, 128);
+  g.beginPath();
+  g.arc(64, 64, 52, 0, Math.PI * 2);
+  g.fillStyle = '#f2c94c';
+  g.fill();
+  g.lineWidth = 7;
+  g.strokeStyle = '#ffffff';
+  g.stroke();
+  g.fillStyle = '#20242c';
+  g.font = 'bold 64px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(letter, 64, 68);
+  marker.tex.needsUpdate = true;
+}
 
-  const warehouse = new THREE.Mesh(
-    new THREE.BoxGeometry(18, 7.5, 11),
-    new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.95 }),
+export function createMissions(scene, rng, G) {
+  // The objective marker: a gold beam, a ground ring and a floating letter.
+  const markerGroup = new THREE.Group();
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.1, 1.1, 34, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xf2c94c, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
   );
-  warehouse.position.set(WAREHOUSE.x, 3.75, WAREHOUSE.z);
-  warehouse.castShadow = true;
-  warehouse.receiveShadow = true;
-  scene.add(warehouse);
-  const door = new THREE.Mesh(
-    new THREE.BoxGeometry(5, 4.4, 0.2),
-    new THREE.MeshStandardMaterial({ color: 0x3c4652, roughness: 0.7, metalness: 0.4 }),
+  beam.position.y = 17;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(1.7, 2.2, 24),
+    new THREE.MeshBasicMaterial({ color: 0xf2c94c, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }),
   );
-  door.position.set(WAREHOUSE.x - 3, 2.2, WAREHOUSE.z - 5.6);
-  scene.add(door);
-  world.colliders.push({
-    minX: WAREHOUSE.x - 9, maxX: WAREHOUSE.x + 9, minZ: WAREHOUSE.z - 5.5, maxZ: WAREHOUSE.z + 5.5,
-  });
-
-  const pad = new THREE.Mesh(
-    new THREE.PlaneGeometry(11, 9),
-    new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.9 }),
-  );
-  pad.rotation.x = -Math.PI / 2;
-  pad.position.set(GARAGE.x, 0.035, GARAGE.z);
-  pad.receiveShadow = true;
-  scene.add(pad);
-
-  // --- the beacon ------------------------------------------------------------
-  const beaconMat = new THREE.MeshBasicMaterial({
-    color: 0xffd94a, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide,
-  });
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 55, 12, 1, true), beaconMat);
-  beacon.position.y = 27.5;
-  scene.add(beacon);
-  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffd94a, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-  const ring = new THREE.Mesh(new THREE.RingGeometry(1.7, 2.4, 28), ringMat);
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.07;
-  scene.add(ring);
+  const marker = letterSprite();
+  marker.sprite.position.y = 7;
+  markerGroup.add(beam, ring, marker.sprite);
+  markerGroup.visible = false;
+  scene.add(markerGroup);
 
-  let beaconTarget = null;
-  function setBeacon(x, z, color) {
-    beaconTarget = { x, z };
-    beacon.position.x = x;
-    beacon.position.z = z;
-    ring.position.x = x;
-    ring.position.z = z;
-    beaconMat.color.setHex(color);
-    ringMat.color.setHex(color);
-    beacon.visible = true;
-    ring.visible = true;
-  }
-  function hideBeacon() {
-    beaconTarget = null;
-    beacon.visible = false;
-    ring.visible = false;
-  }
-  hideBeacon();
-
-  // --- golden cases ------------------------------------------------------------
-  const caseMat = new THREE.MeshStandardMaterial({
-    color: 0xffc93c, metalness: 0.7, roughness: 0.3, emissive: 0x6a4a00,
+  // Golden briefcases.
+  const cases = [];
+  const caseGeo = new THREE.BoxGeometry(0.55, 0.34, 0.4);
+  const caseMat = new THREE.MeshLambertMaterial({ color: 0xd8a920, emissive: 0x5a4300 });
+  const miniBeamGeo = new THREE.CylinderGeometry(0.3, 0.3, 5, 8, 1, true);
+  const miniBeamMat = new THREE.MeshBasicMaterial({ color: 0xf2c94c, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
+  CASE_SPOTS.forEach((spot, i) => {
+    if (G.save.casesFound.includes(i)) return;
+    const group = new THREE.Group();
+    const box = new THREE.Mesh(caseGeo, caseMat);
+    box.position.y = 0.2;
+    const glow = new THREE.Mesh(miniBeamGeo, miniBeamMat);
+    glow.position.y = 2.5;
+    group.add(box, glow);
+    group.position.set(spot.x, 0, spot.z);
+    scene.add(group);
+    cases.push({ i, group, taken: false });
   });
-  const cases = CASE_SPOTS.map((spot, i) => {
-    if (save.collectibles.includes(i)) return null;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.38, 0.55), caseMat);
-    mesh.position.set(spot.x, 0.7, spot.z);
-    mesh.castShadow = true;
-    scene.add(mesh);
-    return { mesh, i, ...spot };
-  });
+  // The heist case waits at the warehouse until the job starts.
+  const heistProp = new THREE.Group();
+  const heistBox = new THREE.Mesh(caseGeo, caseMat);
+  heistBox.position.y = 0.2;
+  heistProp.add(heistBox);
+  heistProp.position.set(HEIST_CASE.x, 0, HEIST_CASE.z);
+  heistProp.visible = false;
+  scene.add(heistProp);
 
-  // --- the stage machine ---------------------------------------------------------
-  let stage = null; // pickup | deliver | steal | grab | escape
-  let taxi = { phase: 'idle', wait: 5, x: 0, z: 0, destX: 0, destZ: 0, dist: 0 };
-  let t = 0;
+  const stage = G.save.storyStage;
+  const ms = {
+    phase: stage <= 0 ? 'meet' : stage === 1 ? 'm2_brief' : stage === 2 ? 'm3_brief' : 'done',
+    objective: null,
+    override: null,
+    marinaCar: null,
+    hotCar: null,
+    caseTaken: false,
+    pendingToasts: [],
+    taxi: { state: 'idle', cool: 5, x: 0, z: 0, dropX: 0, dropZ: 0, timer: 0, fare: 0 },
 
-  function bannerForStage() {
-    const n = save.nextMission;
-    if (n === 0 && stage === 'pickup') hooks.banner('<b>JOB 1 — FIRST RUN</b> — pick up the package at <b>Marina\'s kiosk</b> on the beach.');
-    else if (n === 0 && stage === 'deliver') hooks.banner('<b>JOB 1 — FIRST RUN</b> — take the package to the <b>Sol Tower drop</b>, downtown.');
-    else if (n === 1 && stage === 'steal') hooks.banner('<b>JOB 2 — HOT GOODS</b> — steal the <b>red sports car</b> parked by the avenue and deliver it to the <b>east lockup</b>.');
-    else if (n === 1 && stage === 'deliver') hooks.banner('<b>JOB 2 — HOT GOODS</b> — deliver the car to the <b>east lockup</b>. Lose them or outrun them.');
-    else if (n === 2 && stage === 'grab') hooks.banner('<b>JOB 3 — HARBOUR HEIST</b> — grab the payroll at the <b>lifeguard warehouse</b>, east beach.');
-    else if (n === 2 && stage === 'escape') hooks.banner('<b>JOB 3 — HARBOUR HEIST</b> — get the money to <b>Marina\'s kiosk</b>. Half the bay will chase you.');
-  }
+    say(text, delay = 0) {
+      this.pendingToasts.push({ at: G.time + delay, text });
+    },
 
-  function startStory() {
-    const n = save.nextMission;
-    if (n === 0) { stage = 'pickup'; setBeacon(KIOSK.x, KIOSK.z, 0xffd94a); }
-    else if (n === 1) { stage = 'steal'; hideBeacon(); }
-    else if (n === 2) { stage = 'grab'; setBeacon(WAREHOUSE.x - 12, WAREHOUSE.z - 8, 0xffd94a); }
-    else { stage = null; hideBeacon(); }
-    if (stage) bannerForStage();
-  }
+    showMarker(x, z, letter) {
+      markerGroup.position.set(x, 0, z);
+      markerGroup.visible = true;
+      drawLetter(marker, letter);
+    },
 
-  function completeStory() {
-    const pay = ECONOMY.missionPay[save.nextMission];
-    save.nextMission++;
-    hooks.addMoney(pay);
-    hooks.audio.cash();
-    hooks.audio.sting();
-    hooks.heal();
-    hooks.toast('JOB DONE  +$' + pay);
-    hooks.persist();
-    startStory();
-    if (save.nextMission >= 3) hooks.banner('<b>ALL JOBS DONE</b> — Marina has nothing left. The dispatch and the golden cases are yours.');
-  }
+    hideMarker() {
+      markerGroup.visible = false;
+    },
 
-  function taxiSpot() {
-    const avenues = [-127, -67, -7, 53, 113, 173];
-    const a = pick(rng, avenues);
-    return { x: a + (rng() < 0.5 ? -8.6 : 8.6), z: range(rng, -160, 165) };
-  }
+    setObjectiveOverride(obj) {
+      this.override = obj;
+    },
 
-  function update(dt, ctx) {
-    t += dt;
-    if (ctx.sportsPos) lastSportsPos = ctx.sportsPos;
-    if (beaconTarget) {
-      const s = 1 + 0.16 * Math.sin(t * 4);
-      ring.scale.setScalar(s);
-      beaconMat.opacity = 0.26 + 0.12 * Math.sin(t * 4);
-    }
-    for (const c of cases) {
-      if (!c) continue;
-      c.mesh.rotation.y += dt * 1.6;
-      c.mesh.position.y = 0.7 + Math.sin(t * 2.4 + c.i) * 0.12;
-      if (Math.hypot(ctx.x - c.x, ctx.z - c.z) < 1.9) {
-        save.collectibles.push(c.i);
-        hooks.addMoney(ECONOMY.collectible);
-        hooks.audio.pickup();
-        hooks.toast('GOLDEN CASE  +$' + ECONOMY.collectible + '  (' + save.collectibles.length + '/8)');
-        hooks.persist();
-        scene.remove(c.mesh);
-        cases[c.i] = null;
+    getObjective() {
+      return this.override || this.objective;
+    },
+
+    onEnterCar(car) {
+      if (car === this.marinaCar && this.phase === 'm1_drive') {
+        this.phase = 'm1_deliver';
+        G.hud.toast('Marina: Take it to the east lockup. And be careful with it.');
       }
-    }
-
-    const dKiosk = Math.hypot(ctx.x - KIOSK.x, ctx.z - KIOSK.z);
-    if (stage === 'pickup' && !ctx.inCar && dKiosk < 3.4) {
-      stage = 'deliver';
-      setBeacon(DROP.x, DROP.z, 0xffd94a);
-      hooks.audio.pickup();
-      bannerForStage();
-    } else if (stage === 'deliver' && save.nextMission === 0) {
-      if (Math.hypot(ctx.x - DROP.x, ctx.z - DROP.z) < 4.5) completeStory();
-    } else if (stage === 'steal') {
-      if (ctx.inSports) {
-        hooks.setHeat(0.36);
-        stage = 'deliver';
-        setBeacon(GARAGE.x, GARAGE.z, 0xffd94a);
-        bannerForStage();
+      if (car === this.hotCar && this.phase === 'm2_steal') {
+        G.police.heat = Math.max(G.police.heat, 200);
+        this.phase = 'm2_deliver';
+        G.hud.toast('Marina: They are watching that car — drive, now!');
       }
-    } else if (stage === 'deliver' && save.nextMission === 1) {
-      if (ctx.inSports && Math.hypot(ctx.x - GARAGE.x, ctx.z - GARAGE.z) < 6.5) completeStory();
-    } else if (stage === 'grab') {
-      if (!ctx.inCar && Math.hypot(ctx.x - (WAREHOUSE.x - 12), ctx.z - (WAREHOUSE.z - 8)) < 4) {
-        hooks.setHeat(0.8);
-        stage = 'escape';
-        setBeacon(KIOSK.x, KIOSK.z, 0xffd94a);
-        hooks.audio.pickup();
-        bannerForStage();
+    },
+
+    onPlayerDown() {
+      if (this.phase === 'm1_deliver') this.phase = 'm1_drive';
+      else if (this.phase === 'm2_deliver') this.phase = 'm2_steal';
+      else if (this.phase === 'm3_escape') {
+        this.caseTaken = false;
+        heistProp.visible = true;
+        this.phase = 'm3_case';
+        G.hud.toast('You dropped the case!');
       }
-    } else if (stage === 'escape') {
-      if (!ctx.inCar && dKiosk < 3.6) completeStory();
-    }
-
-    // taxi dispatch
-    if (taxi.phase === 'idle') {
-      taxi.wait -= dt;
-      if (taxi.wait <= 0) {
-        const s = taxiSpot();
-        taxi = { ...taxi, phase: 'pickup', x: s.x, z: s.z };
-        hooks.banner('<b>DISPATCH</b> — fare waiting across town. Pick them up in any car.');
+      if (this.taxi.state !== 'idle') {
+        this.taxi.state = 'idle';
+        this.taxi.cool = 6;
       }
-    } else if (taxi.phase === 'pickup') {
-      if (ctx.inCar && Math.hypot(ctx.x - taxi.x, ctx.z - taxi.z) < 5.5) {
-        const d = taxiSpot();
-        taxi = { ...taxi, phase: 'dropoff', destX: d.x, destZ: d.z, dist: Math.hypot(d.x - taxi.x, d.z - taxi.z) };
-        hooks.toast('Passenger in — drive!');
+    },
+
+    distTo(x, z) {
+      const p = G.player.pos();
+      return Math.hypot(p.x - x, p.z - z);
+    },
+
+    update(dt) {
+      for (let i = this.pendingToasts.length - 1; i >= 0; i -= 1) {
+        if (G.time >= this.pendingToasts[i].at) {
+          G.hud.toast(this.pendingToasts[i].text);
+          this.pendingToasts.splice(i, 1);
+        }
       }
-    } else if (taxi.phase === 'dropoff') {
-      if (ctx.inCar && Math.hypot(ctx.x - taxi.destX, ctx.z - taxi.destZ) < 5.5) {
-        const pay = Math.max(15, Math.round(taxi.dist * ECONOMY.taxiPerMeter));
-        save.taxiFares++;
-        hooks.addMoney(pay);
-        hooks.audio.cash();
-        hooks.heal();
-        hooks.toast('FARE PAID  +$' + pay);
-        hooks.persist();
-        taxi = { phase: 'idle', wait: range(rng, 7, 15), x: 0, z: 0, destX: 0, destZ: 0, dist: 0 };
+      const player = G.player;
+      const onFoot = !player.car;
+
+      // Briefcase pickups.
+      for (const c of cases) {
+        if (c.taken) continue;
+        c.group.rotation.y += dt * 1.4;
+        c.group.position.y = 0.12 + Math.sin(G.time * 2 + c.i) * 0.07;
+        if (onFoot && this.distTo(c.group.position.x, c.group.position.z) < 1.8) {
+          c.taken = true;
+          scene.remove(c.group);
+          G.save.casesFound.push(c.i);
+          storeSave(G.save);
+          G.addCash(100);
+          G.hud.toast(`Golden case ${G.save.casesFound.length}/8 found — +$100`);
+        }
       }
-    }
-  }
 
-  let lastSportsPos = null;
+      switch (this.phase) {
+        case 'meet': {
+          this.objective = { x: MARINA.x, z: MARINA.z, letter: 'M', label: 'Meet Marina Sol at the marina' };
+          if (onFoot && this.distTo(MARINA.x, MARINA.z) < 3.6) {
+            this.say('Marina: You must be the new driver. I have work, if you want it.');
+            this.say('Marina: Take my coupe to the east lockup. $150, and a pistol for future work.', 2.4);
+            this.marinaCar = makeCar(0x1f8a8c, { cls: 'coupe', kind: 'parked' });
+            this.marinaCar.mission = 'marina';
+            this.marinaCar.group.position.set(52, 0, 158);
+            this.marinaCar.heading = Math.PI / 2;
+            this.marinaCar.group.rotation.y = Math.PI / 2;
+            scene.add(this.marinaCar.group);
+            G.cars.push(this.marinaCar);
+            this.phase = 'm1_drive';
+          }
+          break;
+        }
+        case 'm1_drive': {
+          const c = this.marinaCar.group.position;
+          this.objective = { x: c.x, z: c.z, letter: 'C', label: 'Take Marina\'s teal coupe' };
+          break;
+        }
+        case 'm1_deliver': {
+          if (player.car === this.marinaCar) {
+            this.objective = { x: LOCKUP.x, z: LOCKUP.z, letter: 'D', label: 'Deliver the coupe to the east lockup' };
+            if (this.distTo(LOCKUP.x, LOCKUP.z) < 7.5) this.completeJob(1);
+          } else {
+            const c = this.marinaCar.group.position;
+            this.objective = { x: c.x, z: c.z, letter: 'C', label: 'Get back in Marina\'s coupe' };
+          }
+          break;
+        }
+        case 'm2_brief': {
+          this.objective = { x: MARINA.x, z: MARINA.z, letter: 'M', label: 'Return to Marina Sol' };
+          if (onFoot && this.distTo(MARINA.x, MARINA.z) < 3.6) {
+            this.say('Marina: Good work. Now — a red sports car downtown. It is... borrowed.');
+            this.say('Marina: Bring it to the lockup. Expect attention. $300.', 2.4);
+            this.hotCar = makeCar(0xd42427, { cls: 'sport', kind: 'parked' });
+            this.hotCar.mission = 'hotgoods';
+            this.hotCar.group.position.set(MISSION2_CAR.x, 0, MISSION2_CAR.z);
+            this.hotCar.heading = Math.PI;
+            this.hotCar.group.rotation.y = Math.PI;
+            scene.add(this.hotCar.group);
+            G.cars.push(this.hotCar);
+            this.phase = 'm2_steal';
+          }
+          break;
+        }
+        case 'm2_steal': {
+          const c = this.hotCar.group.position;
+          this.objective = { x: c.x, z: c.z, letter: 'C', label: 'Steal the marked red sports car' };
+          break;
+        }
+        case 'm2_deliver': {
+          if (player.car === this.hotCar) {
+            this.objective = { x: LOCKUP.x, z: LOCKUP.z, letter: 'D', label: 'Deliver the sports car to the east lockup' };
+            if (this.distTo(LOCKUP.x, LOCKUP.z) < 7.5) this.completeJob(2);
+          } else {
+            const c = this.hotCar.group.position;
+            this.objective = { x: c.x, z: c.z, letter: 'C', label: 'Get back in the sports car' };
+          }
+          break;
+        }
+        case 'm3_brief': {
+          this.objective = { x: MARINA.x, z: MARINA.z, letter: 'M', label: 'Return to Marina Sol' };
+          if (onFoot && this.distTo(MARINA.x, MARINA.z) < 3.6) {
+            this.say('Marina: Last job. A gold case sits at the lifeguard warehouse, south beach.');
+            this.say('Marina: Take it, lose the police, bring it to me. $600.', 2.4);
+            heistProp.visible = true;
+            this.phase = 'm3_case';
+          }
+          break;
+        }
+        case 'm3_case': {
+          this.objective = { x: HEIST_CASE.x, z: HEIST_CASE.z, letter: '!', label: 'Grab the gold case at the lifeguard warehouse' };
+          if (onFoot && this.distTo(HEIST_CASE.x, HEIST_CASE.z) < 2) {
+            heistProp.visible = false;
+            this.caseTaken = true;
+            G.police.heat = Math.max(G.police.heat, 300);
+            G.hud.toast('Case taken — lose the police!');
+            this.phase = 'm3_escape';
+          }
+          break;
+        }
+        case 'm3_escape': {
+          this.objective = { x: null, z: null, letter: '', label: 'Lose the police!' };
+          if (G.police.heat <= 0) {
+            G.hud.toast('Clean. Take the case back to Marina.');
+            this.phase = 'm3_return';
+          }
+          break;
+        }
+        case 'm3_return': {
+          this.objective = { x: MARINA.x, z: MARINA.z, letter: 'M', label: 'Bring the case back to Marina' };
+          if (onFoot && this.distTo(MARINA.x, MARINA.z) < 3.6) this.completeJob(3);
+          break;
+        }
+        default: {
+          if (!this.taxiObjective()) this.objective = null;
+        }
+      }
+      if (this.phase === 'done' || G.save.storyStage >= 1) this.updateTaxi(dt);
+      const obj = this.getObjective();
+      if (obj && obj.x !== null && obj.x !== undefined) this.showMarker(obj.x, obj.z, obj.letter || 'M');
+      else this.hideMarker();
+    },
 
-  function markerFor() {
-    if (stage === 'steal' && lastSportsPos) return { x: lastSportsPos.x, z: lastSportsPos.z, color: '#ffd94a' };
-    if (beaconTarget && stage) return { x: beaconTarget.x, z: beaconTarget.z, color: '#ffd94a' };
-    if (taxi.phase === 'pickup') return { x: taxi.x, z: taxi.z, color: '#54c8ff' };
-    if (taxi.phase === 'dropoff') return { x: taxi.destX, z: taxi.destZ, color: '#54c8ff' };
-    if (beaconTarget) return { x: beaconTarget.x, z: beaconTarget.z, color: '#ffd94a' };
-    return null;
-  }
+    taxiObjective() {
+      if (this.taxi.state === 'pickup') {
+        this.objective = { x: this.taxi.x, z: this.taxi.z, letter: '$', label: 'Pick up the fare' };
+        return true;
+      }
+      if (this.taxi.state === 'dropoff') {
+        this.objective = {
+          x: this.taxi.dropX, z: this.taxi.dropZ, letter: '$',
+          label: `Drop off the fare · ${Math.max(0, Math.ceil(this.taxi.timer))}s`,
+        };
+        return true;
+      }
+      return false;
+    },
 
-  function promptFor(ctx) {
-    if (stage === 'pickup' && !ctx.inCar && Math.hypot(ctx.x - KIOSK.x, ctx.z - KIOSK.z) < 7) return 'Marina hands you the package…';
-    if (stage === 'steal' && ctx.nearSports) return 'Press F — steal the sports car';
-    if (stage === 'grab' && !ctx.inCar) return 'Grab the payroll — then run';
-    if (taxi.phase === 'pickup' && !ctx.inCar && Math.hypot(ctx.x - taxi.x, ctx.z - taxi.z) < 9) return 'Your fare is waiting — you need a car';
-    return null;
-  }
+    updateTaxi(dt) {
+      const t = this.taxi;
+      const player = G.player;
+      if (G.save.storyStage < 1) return;
+      if (t.state === 'idle') {
+        t.cool -= dt;
+        if (t.cool <= 0) {
+          const p = player.pos();
+          const a = pick(rng, AVENUES);
+          if (rng() < 0.5) {
+            t.x = a + (rng() < 0.5 ? -9.3 : 9.3);
+            t.z = clamp(p.z + range(rng, -100, 100), -195, 195);
+          } else {
+            t.z = a + (rng() < 0.5 ? -9.3 : 9.3);
+            t.x = clamp(p.x + range(rng, -100, 100), -195, 195);
+          }
+          if (Math.hypot(t.x - p.x, t.z - p.z) > 25) t.state = 'pickup';
+          else t.cool = 2;
+        }
+      } else if (t.state === 'pickup') {
+        if (this.phase === 'done') this.taxiObjective();
+        if (player.car && this.distTo(t.x, t.z) < 5) {
+          const p = player.pos();
+          let dx = 0;
+          let dz = 0;
+          let dist = 0;
+          for (let tries = 0; tries < 10; tries += 1) {
+            const a = pick(rng, AVENUES);
+            if (rng() < 0.5) {
+              dx = a + (rng() < 0.5 ? -9.3 : 9.3);
+              dz = clamp(p.z + range(rng, -190, 190), -195, 195);
+            } else {
+              dz = a + (rng() < 0.5 ? -9.3 : 9.3);
+              dx = clamp(p.x + range(rng, -190, 190), -195, 195);
+            }
+            dist = Math.hypot(dx - p.x, dz - p.z);
+            if (dist > 80) break;
+          }
+          t.dropX = dx;
+          t.dropZ = dz;
+          t.timer = dist / 7 + 25;
+          t.fare = clamp(Math.round(dist * 0.35), 40, 90);
+          t.state = 'dropoff';
+          G.hud.toast('Passenger in — go, go!');
+        }
+      } else if (t.state === 'dropoff') {
+        if (this.phase === 'done') this.taxiObjective();
+        t.timer -= dt;
+        if (t.timer <= 0) {
+          t.state = 'idle';
+          t.cool = 6;
+          G.hud.toast('Too slow — the fare walked away.');
+        } else if (player.car && this.distTo(t.dropX, t.dropZ) < 6.5) {
+          G.addCash(t.fare);
+          G.save.taxiDone += 1;
+          storeSave(G.save);
+          G.hud.toast(`Fare paid — $${t.fare}`);
+          t.state = 'idle';
+          t.cool = 5;
+        }
+      }
+      // While a story phase has no objective of its own the taxi marker shows;
+      // the story sets its objective every frame above, so only fill the gaps.
+      if (this.phase === 'done') this.taxiObjective();
+    },
 
-  startStory();
+    completeJob(n) {
+      if (n === 1) {
+        G.addCash(150);
+        G.save.storyStage = 1;
+        this.marinaCar.mission = null;
+        G.hud.toast('Job done — +$150. Marina unlocked your pistol (press 2).');
+        this.phase = 'm2_brief';
+      } else if (n === 2) {
+        G.addCash(300);
+        G.save.storyStage = 2;
+        this.hotCar.mission = null;
+        G.hud.toast('Job done — +$300.');
+        this.phase = 'm3_brief';
+      } else {
+        G.addCash(600);
+        G.save.storyStage = 3;
+        G.hud.flash('PALMERA BAY IS YOURS', '#f2c94c');
+        G.hud.toast('Story complete — +$600. The bay is yours now: fares and cases remain.');
+        this.phase = 'done';
+      }
+      storeSave(G.save);
+      G.audio.sting();
+    },
+  };
 
-  return { update, markerFor, promptFor, KIOSK, GARAGE, WAREHOUSE };
+  return ms;
 }
