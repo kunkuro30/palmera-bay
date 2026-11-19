@@ -1,64 +1,58 @@
-// Keyboard and mouse input. Held keys live in a set the game polls each frame; one-shot
-// presses are remembered as edges so pressed(code) fires exactly once per tap, and mouse
-// movement accumulates for the camera while the pointer is locked.
+// Keyboard and mouse input. Held keys are read as a state snapshot each
+// frame; one-shot actions (enter car, punch, start, shoot) are queued so a
+// press between frames is never lost. Mouse drag orbits the follow camera.
+// TPS aim: holding the RIGHT mouse button sets `aiming` (over-the-shoulder
+// camera + crosshair); a LEFT click while aiming queues 'shoot' instead of
+// starting a camera drag.
 
 export function createInput(canvas) {
-  const held = new Set();
-  const edges = new Set();
-  const mouse = { dx: 0, dy: 0, down: false, clicked: false };
-  let locked = false;
+  const keys = new Set();
+  const actions = [];
+  let dragYaw = 0;
+  let dragging = false;
+  let lastX = 0;
+  let aiming = false;
 
-  window.addEventListener('keydown', (event) => {
-    if (!event.repeat) edges.add(event.code);
-    held.add(event.code);
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => held.delete(event.code));
-  window.addEventListener('blur', () => {
-    held.clear();
-    mouse.down = false;
-  });
-
-  canvas.addEventListener('mousedown', (event) => {
-    if (event.button === 0) {
-      mouse.down = true;
-      mouse.clicked = true;
+  window.addEventListener('keydown', (e) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+    if (!e.repeat) {
+      if (e.code === 'KeyE') actions.push('enter');
+      if (e.code === 'KeyF' || e.code === 'Space') actions.push('punch');
+      if (e.code === 'Enter') actions.push('start');
     }
+    keys.add(e.code);
   });
-  window.addEventListener('mouseup', (event) => {
-    if (event.button === 0) mouse.down = false;
+  window.addEventListener('keyup', (e) => keys.delete(e.code));
+  window.addEventListener('blur', () => keys.clear());
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) { aiming = true; return; }
+    if (e.button === 0 && aiming) { actions.push('shoot'); return; }
+    dragging = true;
+    lastX = e.clientX;
+    actions.push('start');
   });
-  document.addEventListener('mousemove', (event) => {
-    if (!locked) return;
-    mouse.dx += event.movementX || 0;
-    mouse.dy += event.movementY || 0;
+  window.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    dragYaw -= (e.clientX - lastX) * 0.005;
+    lastX = e.clientX;
   });
-  document.addEventListener('pointerlockchange', () => {
-    locked = document.pointerLockElement === canvas;
+  window.addEventListener('pointerup', (e) => {
+    if (e.button === 2) aiming = false;
+    if (e.button === 0) dragging = false;
   });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   return {
-    mouse,
-    down: (code) => held.has(code),
-    /** True only on the frame a key was first pressed. Call once per frame, before endFrame. */
-    pressed: (code) => edges.has(code),
-    isLocked: () => locked,
-    lock() {
-      if (!locked) canvas.requestPointerLock();
+    keys,
+    takeActions() {
+      const out = actions.slice();
+      actions.length = 0;
+      return out;
     },
-    unlock() {
-      if (locked) document.exitPointerLock();
-    },
-    /** Consume the accumulated mouse motion and the frame's click edge. */
-    takeMouse() {
-      const taken = { dx: mouse.dx, dy: mouse.dy, clicked: mouse.clicked };
-      mouse.dx = 0;
-      mouse.dy = 0;
-      mouse.clicked = false;
-      return taken;
-    },
-    endFrame() {
-      edges.clear();
-    },
+    get dragYaw() { return dragYaw; },
+    set dragYaw(v) { dragYaw = v; },
+    get aiming() { return aiming; },
+    down(...codes) { return codes.some((c) => keys.has(c)); },
   };
 }

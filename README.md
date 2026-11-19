@@ -1,36 +1,57 @@
-# Palmera Bay — Hot Pursuit
+# PALMERA BAY — Reborn
 
-![make.fun gta6-01](https://make.fun/badge/gta6-01.svg)
-![rank](https://make.fun/badge/gta6-01/kunkuro30/palmera-bay/rank.svg)
-![reward](https://make.fun/badge/gta6-01/kunkuro30/palmera-bay/reward.svg)
+![make.fun bounty](https://make.fun/badge/gta6-01.svg) ![rank](https://make.fun/badge/gta6-01/kunkuro30/palmera-bay/rank.svg) ![reward](https://make.fun/badge/gta6-01/kunkuro30/palmera-bay/reward.svg)
 
-An original open-world crime game for the [make.fun "Make GTA 6" bounty](https://make.fun/bounty/gta6-01), built with three.js and plain static files — no build step, no network, just open `game/index.html` in a desktop browser.
+**Play / bounty page:** https://make.fun/bounty/gta6-01
 
-Palmera Bay is a sun-soaked coastal city at sunset: six avenues each way, a beach strip with pastel deco facades and neon signs, a marina, a hospital, and a police force that does not give up easily. You arrive with $120 and a pair of fists. Marina Sol, working out of the marina, has three jobs that escalate from a simple delivery to a full bay heist — if you can lose the police with the case in hand.
+A living low-poly open-world beach city for the make.fun **gta6-01** bounty ("Make GTA 6").
 
-## How to play
+Palmera Bay is a sunny crime sandbox in a single static web page, set on a whole
+**island**: sea on every side, an organic curved coastline, the city in the south —
+a crowded beach strip (a giant lifeguard statue, a wooden pier, boats and jetskis,
+sunbathers, swimmers and a volleyball rally), a boardwalk of named shops — FRESH FISH,
+TACKLE & BAIT, DONUT BAY, KAVA COFFEE, SCOOPS, CANDY CLOUD, JUICE PALM, MINI MART 24,
+BAY GIFTS — each with its own keeper, a spinning ferris wheel and carousel, a palm
+park, New-York-density downtown blocks with textured asphalt, raised **sidewalks**,
+crosswalks and traffic lights, a small **Bay Clinic**, and **Palmera Intl Airport** on
+the south-west shore — runway, signed terminal, control tower, parked jets and service
+vehicles, all visitable. A coastal highway loops the island and a freeway runs north
+through hills to one big mountain, a dry desert in the north-east and a lake with its
+own little beach and dock. The minimap draws the whole island — sea, lake, mountain,
+airport, loop — at a glance.
 
-Click **CLICK TO PLAY**, then:
+Every citizen is a big-headed low-poly figure in the "Polygon War" style: a
+low-segment **faceted sphere head** (never a plain box) with simple readable eyes,
+angular flat-shaded body parts in clean solid colours, dressed by role so you can read
+them at a glance: blue-uniform police with cap badges, red-helmet firefighters with
+reflective stripes, a white-coated doctor with a stethoscope and a nurse in scrubs
+outside the clinic, gangsters in black jackets with gold chains and shades guarding
+the heist case, your hoodie-and-cap friend handing out jobs at the pier, casual men
+and women, and kids. You — orange jacket, white tee, jeans, red sneakers — walk, run,
+punch, steal detailed cars (sedans, yellow taxis, trucks, vans, sports cars and
+convertibles you can actually see yourself driving), fight as a **third-person
+shooter** (hold right mouse to aim over the shoulder with a centre crosshair, click
+to fire), run from a 1–5 star wanted system with pursuing police, and work three
+chained jobs — **Beach Run**, **Hot Goods** and **Bay Heist** — with a HUD, a live
+minimap, WebAudio synth sound and localStorage saves.
 
-- **WASD / arrows** — walk and drive · **SHIFT** — sprint · **SPACE** — jump / handbrake
-- **F** — enter / exit a car (any car — but stealing one in front of witnesses brings heat)
-- **Mouse** — camera and aim · **LMB** — punch or shoot
-- **1 / 2** — fists / pistol (the pistol is Marina's reward for the first job)
-- **P** — pause · **M** — mute
+## Play
 
-Follow the gold marker. The minimap draws the GPS route, police blips, and — while the cops are searching — their vision cones; your arrow turns grey when you are hidden. Wanted stars blink while you are out of sight and burn solid while you are seen. Health regenerates only to 50%, GTA-style; missions and the hospital patch you up fully. Getting busted or wasted costs 10% of your cash and wakes you at the hospital. Progress (cash, story stage, cases, fares) is saved in your browser.
+```sh
+node serve.ts          # then open the local address it prints
+```
 
-## What's in the game
+WASD move · SHIFT run · E enter/exit car · F punch · mouse drag looks around.
 
-- A complete story: three jobs for Marina Sol (an errand, a hot sports car, the bay heist), plus repeatable taxi fares and eight hidden golden briefcases worth $100 each
-- A five-star wanted system with line-of-sight rules: heat holds while any unit sees you and drains per-star (30–90 s) while you hide; cruisers ram, officers get out and shoot, and roadblocks appear at three stars
-- Traffic that drives the grid, stops for obstacles and turns at intersections; pedestrians who stroll, panic at gunfire and dive away from fast cars
-- Four car classes with distinct acceleration, top speed and grip; a third-person camera that widens its FOV with speed and shakes at pace
-- A full HUD: scrolling minimap with GPS route and live distance readout, wanted stars, health, cash, case counter, speedometer, objective banner and toasts
-- Fully synthesised WebAudio sound — engine, sirens that swell as police close in, gunshots, punches, cash register, mission stings and an ambient pad. No audio files.
+## Layout
 
-## Tech notes
+- `game/` — the game itself (static, offline; three.js vendored under `game/vendor/`)
+- `game/src/` — one module per job: `world`, `characters`, `vehicles`, `pedestrians`,
+  `police`, `missions`, `combat`, `player`, `hud`, `audio`, `input`, `save`, `shots`
+- `screenshots/` — the four judged scenes (chase cover, beach, city, mission)
+- `main.ts` — hands the entry in: copies `game/` + `screenshots/` to the output and
+  writes the dossier
 
-- `game/` is the whole game: `index.html`, ES modules under `game/src/` (one job each — world, vehicles, pedestrians, player, police, combat, missions, hud, audio, input, save, shots), and three.js r160 vendored at `game/vendor/three.min.js`
-- The city, traffic and screenshot scenes are seeded (`?seed=N`), and `?shot=chase|downtown|drive|heist&seed=N` stages the deterministic scenes the screenshots in `screenshots/` were taken from
-- `main.ts` hands the entry in: it copies `game/` and `screenshots/` to `/output` and writes `dossier.json` with the vendored `vendor/makefun-game.ts`. Serve locally with `node serve.ts`
+## License
+
+MIT — see `LICENSE`.

@@ -3,82 +3,69 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Palmera Bay — Hot Pursuit</title>
-<link rel="icon" href="data:,">
+<title>PALMERA BAY — Reborn</title>
+<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1420; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e2a3f; font-family: "Trebuchet MS", Verdana, sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  .hud { position: fixed; z-index: 5; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.55); pointer-events: none; }
+  #brand { top: 14px; left: 16px; }
+  #brand .name { font-size: 30px; font-weight: 900; letter-spacing: 2px; color: #ffe9a8; -webkit-text-stroke: 1px rgba(90,50,0,.35); }
+  #brand .sub { font-size: 12px; letter-spacing: 4px; color: #bfeaff; margin-top: -4px; }
+  #stars { font-size: 24px; letter-spacing: 3px; color: #ffd23e; margin-top: 2px; min-height: 28px; }
+  #stars .off { color: rgba(255,255,255,.28); }
+  #wallet { top: 14px; right: 16px; text-align: right; }
+  #cash { font-size: 26px; font-weight: 900; color: #8dff7a; }
+  #healthWrap { width: 170px; height: 13px; background: rgba(0,0,0,.45); border: 2px solid rgba(255,255,255,.65); border-radius: 7px; margin-top: 6px; margin-left: auto; overflow: hidden; }
+  #health { height: 100%; width: 100%; background: linear-gradient(90deg, #ff5d5d, #ffb84d); }
+  #minimap { left: 16px; bottom: 16px; border: 3px solid rgba(255,255,255,.7); border-radius: 10px; background: rgba(8,30,48,.85); }
+  #objective { left: 50%; bottom: 18px; transform: translateX(-50%); max-width: 560px; text-align: center;
+    background: rgba(6,24,40,.72); border: 2px solid rgba(255,210,62,.8); border-radius: 10px; padding: 7px 16px;
+    font-size: 16px; font-weight: 700; color: #fff6d8; }
+  #objective:empty { display: none; }
+  #hint { right: 16px; bottom: 16px; font-size: 12px; line-height: 1.7; text-align: right; color: #dff3ff; background: rgba(6,24,40,.5); padding: 6px 10px; border-radius: 8px; }
+  #toast { left: 50%; top: 84px; transform: translateX(-50%); font-size: 22px; font-weight: 900; color: #ffe9a8; text-align: center; opacity: 0; transition: opacity .25s; }
+  #crosshair { left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); opacity: 0; transition: opacity .12s; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: rgba(255,255,255,.92); box-shadow: 0 0 4px rgba(0,0,0,.7); }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+  #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+  #crosshair .dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 50%; background: #ff5964; transform: translate(-50%, -50%); box-shadow: 0 0 5px rgba(0,0,0,.8); }
+  #startScreen { position: fixed; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    background: linear-gradient(180deg, rgba(10,30,50,0) 55%, rgba(6,20,36,.78)); color: #fff; cursor: pointer; }
+  #startScreen .big { font-size: 64px; font-weight: 900; letter-spacing: 4px; color: #ffe9a8; text-shadow: 0 4px 0 #c46a12, 0 10px 26px rgba(0,0,0,.6); }
+  #startScreen .tag { font-size: 17px; letter-spacing: 2px; color: #eaf7ff; margin-top: 2px; }
+  #startScreen .play { margin: 20px 0 44px; font-size: 20px; font-weight: 900; letter-spacing: 2px; color: #10344f; background: #ffd23e;
+    padding: 12px 34px; border-radius: 999px; box-shadow: 0 6px 0 #b98a0e, 0 14px 30px rgba(0,0,0,.45); }
   .hidden { display: none !important; }
-  #hud { position: fixed; inset: 0; pointer-events: none; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #fff; }
-  #minimapWrap { position: absolute; left: 16px; bottom: 16px; width: 150px; }
-  #minimap { width: 150px; height: 150px; border: 3px solid rgba(255,255,255,0.28); border-radius: 10px; background: #141a22; display: block; }
-  #distLabel { text-align: center; font-weight: 700; font-size: 14px; margin-top: 3px; text-shadow: 0 1px 3px #000; min-height: 17px; }
-  #hpBar { height: 9px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.35); border-radius: 4px; margin-top: 3px; overflow: hidden; }
-  #hpFill { height: 100%; width: 100%; background: #57d977; transition: width 0.15s; }
-  #topRight { position: absolute; right: 18px; top: 12px; text-align: right; }
-  #stars { font-size: 26px; letter-spacing: 3px; color: #ffd94d; text-shadow: 0 2px 4px #000; min-height: 32px; transition: opacity 0.08s; }
-  #cash { font-size: 26px; font-weight: 800; color: #7be495; text-shadow: 0 2px 4px #000; }
-  #casesLabel { font-size: 14px; font-weight: 600; color: #f2c94c; text-shadow: 0 1px 3px #000; margin-top: 2px; }
-  #banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); max-width: 72%; background: rgba(12,14,20,0.62); border: 1px solid rgba(242,201,76,0.55); border-radius: 8px; padding: 7px 14px; font-size: 16px; font-weight: 600; text-align: center; }
-  #bannerDist { color: #f2c94c; font-weight: 700; }
-  #toasts { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); width: min(560px, 80%); display: flex; flex-direction: column; gap: 6px; align-items: center; }
-  .toast { background: rgba(12,14,20,0.72); border-left: 3px solid #f2c94c; border-radius: 6px; padding: 7px 12px; font-size: 14.5px; text-align: center; transition: opacity 0.5s; }
-  .toast.fade { opacity: 0; }
-  #prompt { position: absolute; bottom: 118px; left: 50%; transform: translateX(-50%); font-size: 17px; font-weight: 700; text-shadow: 0 2px 4px #000; }
-  #bottomRight { position: absolute; right: 18px; bottom: 16px; text-align: right; }
-  #weapon { font-size: 14px; font-weight: 700; letter-spacing: 2px; color: #ffd94d; text-shadow: 0 1px 3px #000; }
-  #speedo { font-size: 30px; font-weight: 800; text-shadow: 0 2px 4px #000; min-height: 36px; }
-  #flash { position: absolute; top: 34%; left: 0; right: 0; text-align: center; font-size: 64px; font-weight: 900; letter-spacing: 6px; opacity: 0; transition: opacity 0.3s; text-shadow: 0 4px 18px #000; }
-  #dmgVin { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,20,20,0.5) 100%); opacity: 0; }
-  .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
-  #startOverlay { background: linear-gradient(180deg, rgba(20,12,28,0.42), rgba(20,12,28,0.78)); cursor: pointer; }
-  #pauseOverlay { background: rgba(10,10,16,0.55); }
-  .panel { text-align: center; max-width: 620px; padding: 28px 36px; }
-  .panel h1 { margin: 0; font-size: 58px; font-weight: 900; letter-spacing: 3px; color: #ffd94d; text-shadow: 0 4px 22px rgba(255,120,40,0.55); }
-  .panel h2 { margin: 2px 0 14px; font-size: 21px; font-weight: 700; letter-spacing: 7px; color: #ff9e5e; }
-  .panel p { font-size: 16px; line-height: 1.5; color: #f3e9dc; }
-  .panel .controls { font-size: 14px; color: #cfd6dd; line-height: 1.75; }
-  .panel .play { margin-top: 18px; font-size: 21px; font-weight: 800; letter-spacing: 2px; color: #20242c; background: #f2c94c; border-radius: 8px; padding: 11px 26px; display: inline-block; }
-  .panel .big { font-size: 40px; font-weight: 900; letter-spacing: 5px; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Palmera Bay Hot Pursuit: an open-world driving and action game"></canvas>
+<canvas id="game" aria-label="Palmera Bay: a sunny open-world beach city. Walk, steal cars, run jobs, dodge the police."></canvas>
 <p id="status" role="status" aria-live="polite"></p>
-<div id="hud">
-  <div id="minimapWrap">
-    <canvas id="minimap" width="150" height="150"></canvas>
-    <div id="distLabel"></div>
-    <div id="hpBar"><div id="hpFill"></div></div>
-  </div>
-  <div id="topRight">
-    <div id="stars"></div>
-    <div id="cash">$0</div>
-    <div id="casesLabel">Cases 0/8</div>
-  </div>
-  <div id="banner" class="hidden"><span id="bannerLabel"></span> <span id="bannerDist"></span></div>
-  <div id="toasts"></div>
-  <div id="prompt"></div>
-  <div id="bottomRight">
-    <div id="weapon">FISTS</div>
-    <div id="speedo"></div>
-  </div>
-  <div id="dmgVin"></div>
-  <div id="flash"></div>
-  <div id="pauseOverlay" class="overlay hidden"><div class="panel"><div class="big">PAUSED</div><p>Press P to keep driving.</p></div></div>
-  <div id="startOverlay" class="overlay">
-    <div class="panel">
-      <h1>PALMERA BAY</h1>
-      <h2>HOT PURSUIT</h2>
-      <p>A sun-soaked bay city, one borrowed coupe at a time. Run jobs for Marina Sol,
-      dodge the Palmera Bay PD, hunt the eight golden cases — and try not to get busted.</p>
-      <p class="controls">WASD drive &amp; walk · SHIFT sprint · SPACE jump / handbrake · F enter / exit car<br>
-      Mouse aim · LMB punch / shoot · 1 fists · 2 pistol · P pause · M mute</p>
-      <div class="play">CLICK TO PLAY</div>
-    </div>
-  </div>
+
+<div class="hud" id="brand">
+  <div class="name">PALMERA BAY</div>
+  <div class="sub">REBORN · SUNNY SIDE OF CRIME</div>
+  <div id="stars"></div>
 </div>
+<div class="hud" id="wallet">
+  <div id="cash">$0</div>
+  <div id="healthWrap"><div id="health"></div></div>
+</div>
+<canvas class="hud" id="minimap" width="184" height="184"></canvas>
+<div class="hud" id="objective"></div>
+<div class="hud" id="hint">WASD move · SHIFT run<br>E enter / exit car · F punch<br>HOLD right mouse — aim · click — shoot<br>Mouse drag — look around</div>
+<div class="hud" id="toast"></div>
+<div class="hud" id="crosshair"><div class="dot"></div></div>
+
+<div id="startScreen">
+  <div class="big">PALMERA BAY</div>
+  <div class="tag">A living beach city · jobs, wheels and wanted stars</div>
+  <div class="play">CLICK TO PLAY</div>
+</div>
+
 <script src="./vendor/three.min.js"></script>
 <script type="module" src="./src/main.js"></script>
 </body>

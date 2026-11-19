@@ -1,275 +1,215 @@
-// Boot and the one loop for Palmera Bay — Hot Pursuit. Builds the city and every
-// system, wires them through one shared context object G, then runs: input, player,
-// traffic, pedestrians, police, combat, missions, camera, HUD. ?seed=N fixes the city;
-// ?shot=<name>&seed=N stages a deterministic screenshot scene instead of the game.
-import { HOSPITAL } from './config.js';
-import { clamp, createRandom, lerpAngle } from './random.js';
-import { loadSave, storeSave } from './save.js';
-import { createInput } from './input.js';
-import { buildWorld, pushOutOfBuildings } from './world.js';
-import { createVehicles } from './vehicles.js';
-import { createPedestrians } from './pedestrians.js';
-import { createPlayer } from './player.js';
+// Palmera Bay Reborn — boot and the main loop. Builds the city, the crowd,
+// traffic, police, missions and the player into one shared game object G,
+// then either runs the live game (start screen, follow camera, fixed-step
+// updates) or, with ?shot=<scene>&seed=N, stages a deterministic screenshot
+// scene and raises window.__shotReady once the staged frame has settled.
+
+import { WORLD, groundHeight } from './config.js';
+import { makeRng, clamp } from './random.js';
+import { buildWorld } from './world.js';
+import { createTraffic, createHighwayTraffic, makeCar, lightPhase } from './vehicles.js';
+import { createCrowd } from './pedestrians.js';
 import { createPolice } from './police.js';
-import { createCombat } from './combat.js';
 import { createMissions } from './missions.js';
+import { createCombat } from './combat.js';
+import { createPlayer } from './player.js';
 import { createHud } from './hud.js';
 import { createAudio } from './audio.js';
+import { createInput } from './input.js';
+import { loadSave, persistSave } from './save.js';
 import { stageShot } from './shots.js';
 
 const THREE = window.THREE;
-
 const params = new URLSearchParams(window.location.search);
 const shotName = params.get('shot');
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
+const seed = Number.isInteger(seedParam) ? seedParam : 20261119;
+const rng = makeRng(seed);
 
 const canvas = document.getElementById('game');
-const status = document.getElementById('status');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.22;
+
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 4000);
-camera.position.set(0, 26, 90);
+const camera = new THREE.PerspectiveCamera(58, 16 / 9, 0.1, 900);
+
+const world = buildWorld(scene, rng);
 
 const G = {
-  scene,
-  camera,
-  renderer,
-  rng: createRandom(seed),
+  scene, camera, renderer, rng,
   time: 0,
+  colliders: world.colliders,
+  animated: world.animated,
+  lightHeads: world.lightHeads,
+  cars: [],               // parked + mission cars (traffic keeps its own list)
   save: loadSave(),
+  started: !!shotName,
+  forceCrosshair: false,
   camYaw: Math.PI,
-  camPitch: 0.34,
-  camYawOffset: 0,
-  shake: 0,
-  promptText: '',
-  started: false,
-  paused: false,
-  stunT: 0,
+  persist() { persistSave(this.save); },
+  playerPos() { return this.player.pos(); },
+  playerHeading() { return this.player.heading(); },
+  allCars() { return this.traffic.cars.concat(this.cars); },
 };
-G.pushOut = (pos, r) => pushOutOfBuildings(pos, r, G.buildings);
-
-const world = buildWorld(scene, G.rng);
-G.buildings = world.buildings;
-G.input = createInput(canvas);
-const vehicles = createVehicles(scene, G.rng, G);
-G.vehicles = vehicles;
-G.pedsSys = createPedestrians(scene, G.rng, G);
-G.player = createPlayer(scene, G);
-G.police = createPolice(scene, G.rng, G);
-G.combat = createCombat(scene, G.rng, G);
-G.missions = createMissions(scene, G.rng, G);
-G.hud = createHud(G);
 G.audio = createAudio();
+G.input = createInput(canvas);
+G.traffic = createTraffic(scene, rng, 26);
+G.highway = createHighwayTraffic(scene, rng);
+G.crowd = createCrowd(scene, rng);
+G.police = createPolice(scene, rng);
+G.player = createPlayer(scene, G);
+G.missions = createMissions(scene, G);
+G.combat = createCombat(G);
+G.hud = createHud(G);
+G.missions.spawnJobCar();
 
-G.allCars = () => {
-  const arr = [...G.cars];
-  for (const unit of G.police.units) if (!unit.dead) arr.push(unit.car);
-  for (const b of G.police.blockers) arr.push(b);
-  return arr;
-};
-
-G.addCash = (n) => {
-  G.save.cash = Math.max(0, G.save.cash + n);
-  storeSave(G.save);
-  if (n > 0) G.audio.cash();
-};
-
-function announce(text) {
-  status.textContent = text;
+// A few parked cars dress the streets and give the player free wheels.
+for (const [x, z, h, color, cls] of [
+  [-44, 70, 0.4, 0x2b50c8, 'sedan'], [-104, 186, 1.2, 0x37b24d, 'sedan'],
+  [46, 118, -0.3, 0xf2f2f2, 'van'], [-154, 70, 2.8, 0xf28c28, 'sedan'],
+  [96, 44, 0.1, 0x845ef7, 'sedan'], [30, 186, 1.57, 0x12b5a5, 'sedan'],
+  [56, 31, 0.3, 0xd42a2a, 'truck'],   // the fire truck by its crew's corner
+]) {
+  const car = makeCar(color, { cls, kind: 'parked' });
+  car.group.position.set(x, groundHeight(x, z), z);
+  car.heading = h;
+  car.group.rotation.y = h;
+  scene.add(car.group);
+  G.cars.push(car);
 }
 
-function goDown(kind) {
-  if (G.stunT > 0) return;
-  G.stunT = 1.4;
-  G.save.cash = Math.floor(G.save.cash * 0.9);
-  storeSave(G.save);
-  if (kind === 'busted') {
-    G.hud.flash('BUSTED', '#5aa2ff');
-    G.audio.busted();
-    announce('Busted. You wake up outside the hospital, ten percent lighter.');
-  } else {
-    G.hud.flash('WASTED', '#e5534b');
-    announce('Wasted. You wake up outside the hospital, ten percent lighter.');
-  }
-  G.police.reset();
-  G.missions.onPlayerDown();
-  G.player.respawnAt(HOSPITAL.x, HOSPITAL.z);
-  G.camYaw = Math.PI;
-  G.camPitch = 0.34;
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
-G.onBusted = () => goDown('busted');
-G.onWasted = () => goDown('wasted');
+window.addEventListener('resize', resize);
+resize();
 
-function setPaused(paused) {
-  G.paused = paused;
-  G.hud.setPaused(paused);
-  if (paused) G.input.unlock();
-  else G.input.lock();
-}
-
-function handleKeys(mouse) {
-  const input = G.input;
-  if (input.pressed('KeyP')) {
-    setPaused(!G.paused);
-    return;
-  }
-  if (G.paused) return;
-  if (input.pressed('KeyM')) {
-    const muted = G.audio.toggleMute();
-    G.hud.toast(muted ? 'Sound off.' : 'Sound on.');
-  }
-  if (input.pressed('Digit1')) G.combat.switchWeapon('fists');
-  if (input.pressed('Digit2')) G.combat.switchWeapon('pistol');
-  if (mouse.clicked) {
-    if (!input.isLocked()) input.lock();
-    else G.combat.attack();
-  }
-}
-
+// ---- camera ------------------------------------------------------------------
 const camTarget = new THREE.Vector3();
-function updateCamera(dt, mouse) {
-  const player = G.player;
-  if (player.car) {
-    const car = player.car;
-    G.camYawOffset += mouse.dx * 0.0022;
-    G.camYawOffset = clamp(G.camYawOffset - G.camYawOffset * 1.4 * dt, -0.9, 0.9);
-    const desired = car.heading + G.camYawOffset;
-    G.camYaw = lerpAngle(G.camYaw, desired, 1 - Math.exp(-3.4 * dt));
-    const pitch = 0.3;
-    const dist = 10.5;
-    const fx = Math.sin(G.camYaw);
-    const fz = Math.cos(G.camYaw);
-    const cp = car.group.position;
-    camera.position.set(
-      cp.x - fx * dist * Math.cos(pitch),
-      dist * Math.sin(pitch) + 1.1,
-      cp.z - fz * dist * Math.cos(pitch),
-    );
-    const speed = Math.abs(car.speed);
-    G.shake = Math.max(0, G.shake - dt * 1.4);
-    const amp = Math.max(G.shake * 0.22, speed > 28 ? Math.min(0.1, (speed - 28) / 14 * 0.07) : 0);
-    if (amp > 0) {
-      camera.position.x += (G.rng() - 0.5) * amp;
-      camera.position.y += (G.rng() - 0.5) * amp * 0.6;
-    }
-    camTarget.set(cp.x + fx * 3.5, 1.5, cp.z + fz * 3.5);
-    camera.lookAt(camTarget);
-    const targetFov = 62 + Math.min(1, speed / 42) * 10;
-    if (Math.abs(camera.fov - targetFov) > 0.05) {
-      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 5);
-      camera.updateProjectionMatrix();
-    }
+let lastDrag = 0;
+function updateCamera(dt) {
+  const p = G.playerPos();
+  const heading = G.playerHeading();
+  if (G.player.car) {
+    camTarget.set(p.x - Math.sin(heading) * 10.5, 4.2, p.z - Math.cos(heading) * 10.5);
+    camera.position.lerp(camTarget, Math.min(1, dt * 5));
+    camera.lookAt(p.x + Math.sin(heading) * 8, 1.2, p.z + Math.cos(heading) * 8);
+    G.camYaw = heading;
+    lastDrag = G.input.dragYaw;
+  } else if (G.player.aiming) {
+    // TPS aim: tight over-the-shoulder, crosshair at screen centre.
+    G.camYaw += G.input.dragYaw - lastDrag;
+    lastDrag = G.input.dragYaw;
+    const yaw = G.camYaw;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    camTarget.set(p.x - fx * 3.6 + fz * 1.15, 2.05, p.z - fz * 3.6 - fx * 1.15);
+    camera.position.lerp(camTarget, Math.min(1, dt * 18));
+    camera.lookAt(p.x + fx * 26, 1.5, p.z + fz * 26);
   } else {
-    G.camYaw -= mouse.dx * 0.0026;
-    G.camPitch = clamp(G.camPitch + mouse.dy * 0.0022, 0.06, 1.15);
-    const dist = 7.2;
-    const fx = Math.sin(G.camYaw);
-    const fz = Math.cos(G.camYaw);
-    const pp = player.group.position;
-    camera.position.set(
-      pp.x - fx * dist * Math.cos(G.camPitch),
-      pp.y + dist * Math.sin(G.camPitch) + 0.4,
-      pp.z - fz * dist * Math.cos(G.camPitch),
-    );
-    G.pushOut(camera.position, 0.4);
-    if (camera.position.y < 0.5) camera.position.y = 0.5;
-    camTarget.set(pp.x + fx * 2.2, pp.y + 1.55, pp.z + fz * 2.2);
-    camera.lookAt(camTarget);
-    if (Math.abs(camera.fov - 62) > 0.05) {
-      camera.fov += (62 - camera.fov) * Math.min(1, dt * 5);
-      camera.updateProjectionMatrix();
-    }
+    G.camYaw += G.input.dragYaw - lastDrag;
+    lastDrag = G.input.dragYaw;
+    const yaw = G.camYaw;
+    camTarget.set(p.x - Math.sin(yaw) * 9, 4.6, p.z - Math.cos(yaw) * 9);
+    camera.position.lerp(camTarget, Math.min(1, dt * 7));
+    camera.lookAt(p.x, 1.6, p.z);
   }
 }
 
-function titleCamera() {
-  const t = G.time * 0.045;
-  camera.position.set(Math.sin(t) * 88, 27, 20 + Math.cos(t) * 88);
-  camTarget.set(0, 5, 10);
-  camera.lookAt(camTarget);
-  if (Math.abs(camera.fov - 58) > 0.05) {
-    camera.fov = 58;
-    camera.updateProjectionMatrix();
-  }
-}
-
-G.hud.bindStart(() => {
+// ---- start screen --------------------------------------------------------------
+const startScreen = document.getElementById('startScreen');
+function beginPlay() {
   if (G.started) return;
   G.started = true;
-  G.hud.hideStart();
-  G.audio.init();
-  G.input.lock();
-  announce('Palmera Bay. Meet Marina Sol at the marina, to the south-east.');
-  G.hud.toast('Find Marina Sol at the marina — follow the gold marker.');
-});
+  startScreen.classList.add('hidden');
+  G.audio.unlock();
+  G.hud.toast('Welcome to Palmera Bay — Job 1 is on your map');
+}
+if (shotName) startScreen.classList.add('hidden');
+startScreen.addEventListener('click', beginPlay);
 
-window.addEventListener('resize', () => {
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-});
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && G.started && !G.paused) setPaused(true);
-});
+// ---- simulation step -------------------------------------------------------------
+const STEP = 1 / 60;
 
-window.__game = { scene, camera, renderer, player: G.player, state: G };
+function stepWorld(dt) {
+  G.time += dt;
+  for (const a of G.animated) a.update(G.time, dt);
+  const phase = lightPhase(G.time);
+  for (const head of G.lightHeads) {
+    head.lampR.visible = phase.ns !== 'green';
+    head.lampG.visible = phase.ns === 'green';
+  }
+  if (!G.started) {
+    // Attract mode behind the start screen: the city lives on without the player.
+    G.traffic.update(dt, G.time);
+    G.highway.update(dt);
+    G.crowd.update(dt, G.time);
+    return;
+  }
+  for (const action of G.input.takeActions()) {
+    if (action === 'enter') G.player.toggleCar();
+    if (action === 'punch') G.combat.punch();
+    if (action === 'shoot') G.combat.shoot();
+    if (action === 'start') beginPlay();
+  }
+  G.player.update(dt, G.time);
+  G.traffic.update(dt, G.time);
+  G.highway.update(dt);
+  G.crowd.update(dt, G.time);
+  G.police.update(dt, G.time, G.playerPos(), !!G.player.car);
+  G.combat.update(dt);
+  G.missions.update(dt, G.time);
+  let nearest = Infinity;
+  for (const u of G.police.units) {
+    const up = u.car.group.position;
+    const pp = G.playerPos();
+    nearest = Math.min(nearest, Math.hypot(up.x - pp.x, up.z - pp.z));
+  }
+  G.audio.siren(G.police.stars > 0, clamp(1 - nearest / 70, 0, 1) * 0.07);
+  G.hud.update();
+}
 
-// Screenshot scenes: stage once, then advance a fixed number of frames.
+// ---- frame loop --------------------------------------------------------------------
 let shotCtl = null;
 let shotFrames = 0;
+const SHOT_FRAMES = 90;   // 1.5 s of staged motion before the frame settles
 if (shotName) {
-  G.hud.hideStart();
-  G.started = true;
   shotCtl = stageShot(shotName, G);
+  G.hud.update();
 }
 
 let last = performance.now();
+let accumulator = 0;
+
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
   if (shotCtl) {
-    G.time += 1 / 30;
-    shotCtl.frame(1 / 30);
-    world.update(G.time);
-    G.hud.update(1 / 30);
+    // Deterministic: one fixed step per painted frame, no live systems.
+    if (shotFrames < SHOT_FRAMES) {
+      G.time += STEP;
+      for (const a of G.animated) a.update(G.time, STEP);
+      shotCtl.frame(STEP);
+      shotFrames += 1;
+      G.hud.update();
+    }
     renderer.render(scene, camera);
-    shotFrames += 1;
-    if (shotFrames >= 45) window.__shotReady = true;
+    if (shotFrames >= SHOT_FRAMES && !window.__shotReady) window.__shotReady = true;
     return;
   }
-  const mouse = G.input.takeMouse();
-  if (G.started && !G.paused) {
-    if (G.stunT > 0) {
-      G.stunT -= dt;
-    } else {
-      G.time += dt;
-      handleKeys(mouse);
-      if (!G.paused) {
-        G.player.update(dt);
-        vehicles.update(dt);
-        G.pedsSys.update(dt);
-        G.police.update(dt);
-        G.combat.update(dt);
-        G.missions.update(dt);
-        G.audio.update(G);
-      }
-    }
-    updateCamera(dt, mouse);
-  } else if (!G.started) {
-    G.time += dt;
-    vehicles.update(dt);
-    G.pedsSys.update(dt);
-    titleCamera();
+  accumulator += Math.min((now - last) / 1000, 0.25);
+  last = now;
+  while (accumulator >= STEP) {
+    stepWorld(STEP);
+    accumulator -= STEP;
   }
-  world.update(G.time);
-  G.hud.update(dt);
-  G.input.endFrame();
+  updateCamera(1 / 60);
   renderer.render(scene, camera);
 }
+
 requestAnimationFrame(frame);

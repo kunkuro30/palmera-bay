@@ -1,31 +1,24 @@
-// The save file: cash, story progress, found cases and taxi count, kept in localStorage
-// under one key. Loading is forgiving — a missing or broken save just starts fresh.
-import { SAVE_KEY, START_CASH } from './config.js';
+// localStorage persistence: cash earned and jobs finished survive a reload.
+// Storage can be unavailable (private windows) — failures are swallowed and
+// the save then lasts only for the visit.
 
-export function defaultSave() {
-  return { cash: START_CASH, storyStage: 0, casesFound: [], taxiDone: 0 };
-}
+const KEY = 'palmera-bay-reborn.save';
 
 export function loadSave() {
+  const save = { cash: 0, jobsDone: 0 };
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (!raw) return defaultSave();
-    const data = JSON.parse(raw);
-    const save = defaultSave();
-    if (Number.isFinite(data.cash)) save.cash = Math.max(0, Math.floor(data.cash));
-    if (Number.isInteger(data.storyStage)) save.storyStage = Math.min(4, Math.max(0, data.storyStage));
-    if (Array.isArray(data.casesFound)) save.casesFound = data.casesFound.filter((n) => Number.isInteger(n));
-    if (Number.isInteger(data.taxiDone)) save.taxiDone = Math.max(0, data.taxiDone);
-    return save;
-  } catch {
-    return defaultSave();
-  }
+    const raw = window.localStorage.getItem(KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Number.isFinite(parsed.cash)) save.cash = parsed.cash;
+      if (Number.isFinite(parsed.jobsDone)) save.jobsDone = parsed.jobsDone;
+    }
+  } catch { /* keep defaults */ }
+  return save;
 }
 
-export function storeSave(save) {
+export function persistSave(save) {
   try {
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify(save));
-  } catch {
-    // Storage can be off (private windows): progress then lasts this visit only.
-  }
+    window.localStorage.setItem(KEY, JSON.stringify({ cash: save.cash, jobsDone: save.jobsDone }));
+  } catch { /* visit-only save */ }
 }

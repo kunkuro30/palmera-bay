@@ -1,45 +1,35 @@
-// A small seeded random number generator (mulberry32): the same seed gives the same city,
-// which is what makes the screenshot scenes repeatable.
-
-export function createRandom(seed) {
-  let a = seed | 0;
-  return function random() {
-    a = (a + 0x6d2b79f5) | 0;
+// A tiny seeded RNG (mulberry32) so screenshot scenes and city dressing are
+// deterministic: the same seed always builds the same Palmera Bay.
+export function makeRng(seed) {
+  let a = (seed >>> 0) || 1;
+  return function rng() {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-/** Random float in [min, max). */
-export function range(rng, min, max) {
-  return min + rng() * (max - min);
+export function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length) % arr.length];
 }
 
-/** Random integer in [min, max]. */
-export function intRange(rng, min, max) {
-  return Math.floor(range(rng, min, max + 1));
+export function range(rng, lo, hi) {
+  return lo + rng() * (hi - lo);
 }
 
-/** Pick one element of an array. */
-export function pick(rng, items) {
-  return items[Math.floor(rng() * items.length)];
+export function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
 }
 
-/** Clamp v into [min, max]. */
-export function clamp(v, min, max) {
-  return Math.max(min, Math.min(max, v));
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
-/** Wrap an angle into (-PI, PI]. */
-export function wrapAngle(a) {
-  let r = a % (Math.PI * 2);
-  if (r > Math.PI) r -= Math.PI * 2;
-  if (r < -Math.PI) r += Math.PI * 2;
-  return r;
-}
-
-/** Shortest-arc interpolation between two angles. */
-export function lerpAngle(a, b, t) {
-  return a + wrapAngle(b - a) * t;
+// Shortest signed angular difference from a to b, in radians.
+export function angDiff(a, b) {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
