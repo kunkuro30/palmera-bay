@@ -1,4 +1,4 @@
-# PALMERA BAY — Reborn
+# GO RIO RIO
 
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![rank](https://make.fun/badge/gta6-01/kunkuro30/palmera-bay/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
@@ -8,7 +8,7 @@
 
 A living low-poly open-world beach city for the make.fun **gta6-01** bounty ("Make GTA 6").
 
-Palmera Bay is a sunny crime sandbox in a single static web page, set on a whole
+GO RIO RIO is a sunny crime sandbox in a single static web page, set in Palmera Bay on a whole
 **island**: sea on every side, an organic curved coastline, the city in the south —
 a crowded beach strip (a giant lifeguard statue, a wooden pier, boats and jetskis,
 sunbathers, swimmers and a volleyball rally), a boardwalk of named shops — FRESH FISH,

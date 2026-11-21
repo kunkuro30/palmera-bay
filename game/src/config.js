@@ -113,6 +113,23 @@ export function onSidewalk(x, z) {
   return false;
 }
 
+export const SEA_LEVEL = 0.1;   // the sea plane's Y in world.js
+
+// Point-in-water test built from the SAME maths that draws the island:
+// a point is in water when it lies beyond the coast curve (or inside the
+// lake disc) AND the terrain there is below the water surface. Returns the
+// water depth in metres, or -1 on dry land. Swimmer spawns must pass this
+// with a depth of 0.4–1.2 — the textbook fix for "swimming on land".
+export function waterDepthAt(x, z) {
+  const dl = Math.hypot(x - WORLD.lake.x, z - WORLD.lake.z);
+  if (dl < WORLD.lake.waterR) return WORLD.lake.waterY - heightAt(x, z);
+  const dx = x - WORLD.centre.x;
+  const dz = z - WORLD.centre.z;
+  const d = Math.hypot(dx, dz);
+  if (d > coastRadius(Math.atan2(dz, dx))) return SEA_LEVEL - heightAt(x, z);
+  return -1;
+}
+
 // The height a walker/driver actually stands on: terrain, lifted onto the
 // pier deck, the lake dock, or a sidewalk where those apply.
 export function groundHeight(x, z) {
@@ -147,21 +164,25 @@ export const FREEWAY_PTS = [
   { x: 94, z: -122 }, { x: 96, z: -162 }, { x: 82, z: -198 },
 ];
 
+// BUILD 7: the row is now eight DISTINCT food & drink types (seafood/
+// sushi, taco, bakery & donut, coffee, ice-cream, burger, noodle bar,
+// pizzeria) plus the gift shop — each with its own facade tint, band
+// colour and roof prop (world.js). Positions and keeper spots unchanged.
 export const SHOPS = [
-  { x: -108, kind: 'fish',     label: 'FRESH FISH',    color: 0x2e86c8, keeper: 0x2e86c8 },
-  { x: -88,  kind: 'tackle',   label: 'TACKLE & BAIT', color: 0x7a4a21, keeper: 0x8a5a2b },
-  { x: -68,  kind: 'donuts',   label: 'DONUT BAY',     color: 0xff6fa5, keeper: 0xff8fb8 },
-  { x: -48,  kind: 'coffee',   label: 'KAVA COFFEE',   color: 0x5a3825, keeper: 0x6e4a2f },
-  { x: 28,   kind: 'icecream', label: 'SCOOPS',        color: 0x63c7e6, keeper: 0x9fe0f5 },
-  { x: 48,   kind: 'candy',    label: 'CANDY CLOUD',   color: 0xff9ff3, keeper: 0xffc2f8 },
-  { x: 68,   kind: 'juice',    label: 'JUICE PALM',    color: 0x7ac74f, keeper: 0xa5dd85 },
-  { x: 88,   kind: 'market',   label: 'MINI MART 24',  color: 0xf2b134, keeper: 0xffd23e },
-  { x: 108,  kind: 'souvenir', label: 'BAY GIFTS',     color: 0xe4572e, keeper: 0xff8a5c },
+  { x: -108, kind: 'sushi',    label: 'SUSHI BAY',    color: 0x2e86c8, facade: 0xf3e9d2, keeper: 0x2e86c8 },
+  { x: -88,  kind: 'taco',     label: 'TACO PALM',    color: 0xe4572e, facade: 0xf7dcc0, keeper: 0xe4572e },
+  { x: -68,  kind: 'donuts',   label: 'DONUT BAY',    color: 0xff6fa5, facade: 0xfdeef4, keeper: 0xff8fb8 },
+  { x: -48,  kind: 'coffee',   label: 'KAVA COFFEE',  color: 0x5a3825, facade: 0xe9dcc8, keeper: 0x6e4a2f },
+  { x: 28,   kind: 'icecream', label: 'SCOOPS',       color: 0x63c7e6, facade: 0xeaf7fb, keeper: 0x9fe0f5 },
+  { x: 48,   kind: 'burger',   label: 'PALM BURGER',  color: 0xf2b134, facade: 0xfdf3d8, keeper: 0xffd23e },
+  { x: 68,   kind: 'noodle',   label: 'NOODLE BAY',   color: 0xd42a2a, facade: 0xfbe9e4, keeper: 0xff6b5e },
+  { x: 88,   kind: 'pizza',    label: 'PIZZA PALM',   color: 0x37b24d, facade: 0xeef7e6, keeper: 0x5ecb6e },
+  { x: 108,  kind: 'souvenir', label: 'BAY GIFTS',    color: 0xe4572e, facade: 0xf7f0dd, keeper: 0xff8a5c },
 ];
 
 export const PALETTE = {
-  sky: 0x8fd8f2,
-  fog: 0xbfe6f5,
+  sky: 0x93d2f0,
+  fog: 0xd8e8ee,
   sand: 0xf2d492,
   water: 0x1f9bb8,
   waterDeep: 0x14748f,

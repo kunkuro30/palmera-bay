@@ -1,30 +1,90 @@
-// HUD: DOM readouts (brand, wanted stars, cash, health), the objective
-// banner, toasts, and a canvas minimap that draws the ISLAND — sea all
-// around, the beach ring, the southern city grid, the airport plateau,
-// the desert, the lake and the mountain — so one glance reads "GTA-style
-// island map". All shapes come from the shared layout maths in config.js.
+// HUD: DOM readouts (brand, wanted stars, cash, clock, health + armour,
+// weapon and BAY REP chips), the mission card (chapter, job, stage pips,
+// NEXT line), toasts, big centre cards (chapter titles, JOB COMPLETE),
+// district title cards, the district+street caption, and a canvas
+// minimap that draws the ISLAND — sea all around, the beach ring, the
+// southern city grid, the airport plateau, the desert, the lake and the
+// mountain — so one glance reads "GTA-style island map". All shapes come
+// from the shared layout maths in config.js.
 
 import { WORLD, coastRadius, highwayLoopPoints, FREEWAY_PTS } from './config.js';
+import { districtAt, streetAt } from './districts.js';
+import { repLevel } from './save.js';
 
 export function createHud(G) {
   const starsEl = document.getElementById('stars');
   const cashEl = document.getElementById('cash');
+  const clockEl = document.getElementById('clock');
   const healthEl = document.getElementById('health');
+  const armourEl = document.getElementById('armour');
+  const weaponEl = document.getElementById('weaponChip');
+  const rankEl = document.getElementById('rankChip');
   const objEl = document.getElementById('objective');
   const toastEl = document.getElementById('toast');
+  const promptEl = document.getElementById('prompt');
   const crossEl = document.getElementById('crosshair');
+  const districtEl = document.getElementById('district');
+  const gradeEl = document.getElementById('grade');
+  const locCardEl = document.getElementById('locCard');
+  const bigCardEl = document.getElementById('bigCard');
+  const bigTitleEl = document.getElementById('bigCardTitle');
+  const bigSubEl = document.getElementById('bigCardSub');
   const map = document.getElementById('minimap');
   const ctx = map.getContext('2d');
   let toastTimer = null;
   let lastStars = -1;
   let lastCash = -1;
-  let lastObj = '';
+  let lastObjKey = '';
+  let lastClock = '';
+  let lastWeapon = '';
+  let lastRank = -1;
+  let lastRawMins = -1;
+  let lastCaption = '';
+  let curDistrict = null;
+  let locTimer = null;
+  const cardQueue = [];
+  let cardTimer = null;
 
   function toast(msg, ms = 2600) {
     toastEl.textContent = msg;
     toastEl.style.opacity = '1';
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toastEl.style.opacity = '0'; }, ms);
+  }
+
+  // BUILD 13: the approach prompt (sidejobs.js drives it) — a pill
+  // above the objective card naming the offer and its price. Pass null
+  // to clear. HTML is allowed for the <b> key hint; callers pass only
+  // their own strings.
+  let lastPrompt = undefined;
+  function prompt(html) {
+    if (html === lastPrompt) return;
+    lastPrompt = html;
+    if (!html) { promptEl.style.display = 'none'; return; }
+    promptEl.innerHTML = html;
+    promptEl.style.display = 'block';
+  }
+
+  // Big centre cards (chapter titles, JOB COMPLETE) — queued so two in
+  // a row never stomp each other.
+  function bigCard(title, sub, ms = 2400) {
+    cardQueue.push({ title, sub, ms });
+    if (!cardTimer) stepCard();
+  }
+  function stepCard() {
+    const c = cardQueue.shift();
+    if (!c) { bigCardEl.classList.remove('show'); cardTimer = null; return; }
+    bigTitleEl.textContent = c.title;
+    bigSubEl.textContent = c.sub || '';
+    bigCardEl.classList.add('show');
+    cardTimer = setTimeout(stepCard, c.ms);
+  }
+
+  function locCard(name) {
+    locCardEl.textContent = name;
+    locCardEl.classList.add('show');
+    if (locTimer) clearTimeout(locTimer);
+    locTimer = setTimeout(() => locCardEl.classList.remove('show'), 2300);
   }
 
   function drawMap() {
@@ -106,6 +166,13 @@ export function createHud(G) {
       ctx.beginPath(); ctx.arc(px(obj.x), pz(obj.z), 5, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#7a5b00'; ctx.lineWidth = 1.5; ctx.stroke();
     }
+    // BUILD 14: the active race checkpoint rides the minimap in orange.
+    const rm = G.races ? G.races.marker : null;
+    if (rm) {
+      ctx.fillStyle = '#fb8b24';
+      ctx.beginPath(); ctx.arc(px(rm.x), pz(rm.z), 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#7a3c00'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
     // Police.
     ctx.fillStyle = '#3d7bff';
     for (const unit of G.police.units) {
@@ -130,6 +197,17 @@ export function createHud(G) {
     ctx.restore();
   }
 
+  function missionCard(obj) {
+    if (!obj) return '';
+    if (!obj.jobName) return obj.label || '';   // screenshot overrides stay plain
+    let pips = '';
+    for (let i = 0; i < obj.stageCount; i++) pips += i < obj.stageIdx ? '●' : (i === obj.stageIdx ? '◉' : '○');
+    return `<div class="obj-chapter">${obj.chapterName}</div>` +
+      `<div class="obj-job">${obj.letter ? obj.letter + ' · ' : ''}${obj.jobName}</div>` +
+      `<div class="obj-stage">${obj.stageLabel}</div>` +
+      (obj.stageCount ? `<div class="obj-row"><span class="obj-pips">${pips}</span><span class="obj-next">NEXT · ${obj.nextLabel}</span></div>` : '');
+  }
+
   function update() {
     const stars = G.police.stars;
     if (stars !== lastStars) {
@@ -142,13 +220,76 @@ export function createHud(G) {
       lastCash = G.save.cash;
       cashEl.textContent = '$' + G.save.cash.toLocaleString('en-US');
     }
+    // Clock: the bay's day starts at 09:30 and runs one game minute
+    // per real second (the sun grade stays sunny — build 13 bends the
+    // light, the clock already tells the time).
+    // BUILD 15: the day counter rides the midnight wrap of the RAW
+    // clock (the safehouse rest adds a display offset on top, and
+    // bumps the day itself when it jumps to 08:00).
+    const rawMins = (570 + Math.floor(G.time)) % 1440;
+    if (!G.shotMode) {
+      if (lastRawMins >= 0 && rawMins < lastRawMins - 720) {
+        G.save.day = (G.save.day || 1) + 1;
+        G.persist();
+      }
+      lastRawMins = rawMins;
+    }
+    const mins = (rawMins + (G.save.clockOff || 0)) % 1440;
+    const clock = String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+    if (clock !== lastClock) { lastClock = clock; clockEl.textContent = clock; }
+    // BUILD 15: the cinematic grade — a CSS vignette + warm wash over
+    // the whole frame (no post-processing chain), breathing up to
+    // full warmth across the golden hour, 17:00–19:00 on the clock.
+    // BUILD 17 (resubmit): the base warmth is raised (0.38 → 0.55) so
+    // the default midday look reads sun-soaked instead of pale.
+    if (gradeEl) {
+      const golden = Math.max(0, 1 - Math.abs(mins - 1080) / 90);
+      gradeEl.style.opacity = (0.55 + 0.45 * golden).toFixed(2);
+    }
     healthEl.style.width = Math.max(0, G.player.health) + '%';
+    armourEl.style.width = Math.max(0, Math.min(100, G.player.armour || 0)) + '%';
+    // BUILD 14: the weapon chip carries the current weapon's name and
+    // the four slot pips — ◉ current, ● owned, ○ not yet bought. The
+    // rank chip now shows the RESPECT total behind the level.
+    // BUILD 15: guns also carry their magazine — "12 / ∞" (the
+    // reserve really is infinite), RELOADING… while R works, EMPTY
+    // when the mag runs dry.
+    let weapon = 'FISTS';
+    if (G.weapons) {
+      const cur = G.weapons.def();
+      const pips = G.weapons.WEAPONS.map((w) =>
+        w.id === cur.id ? '◉' : (G.weapons.owned(w.id) ? '●' : '○')).join('');
+      weapon = `${cur.name} ${pips}`;
+      if (cur.mag) {
+        if (G.weapons.reloading) weapon += ' · RELOADING…';
+        else {
+          const a = G.weapons.ammoOf(cur.id);
+          weapon += ` · ${a} / ∞` + (a === 0 ? ' · EMPTY' : '');
+        }
+      }
+    } else if (G.player.aiming) weapon = 'PISTOL';
+    if (weapon !== lastWeapon) { lastWeapon = weapon; weaponEl.textContent = weapon; }
+    const rank = repLevel(G.save);
+    const rankText = `BAY REP Lv ${rank} · RESPECT ${G.save.respect || 0}`;
+    if (rankText !== lastRank) { lastRank = rankText; rankEl.textContent = rankText; }
     if (crossEl) crossEl.style.opacity = (G.player.aiming || G.forceCrosshair) ? '1' : '0';
     const obj = G.missions ? G.missions.objective : null;
-    const label = obj ? obj.label : '';
-    if (label !== lastObj) { lastObj = label; objEl.textContent = label; }
+    const key = obj ? (obj.jobName ? `${obj.jobName}|${obj.stageIdx}|${obj.stageLabel}` : obj.label) : '';
+    if (key !== lastObjKey) { lastObjKey = key; objEl.innerHTML = missionCard(obj); }
+    // District + street caption, and the big title card on entry.
+    const pp = G.playerPos();
+    const d = districtAt(pp.x, pp.z);
+    const st = streetAt(pp.x, pp.z);
+    const caption = d ? (st && st.toUpperCase() !== d.name ? `${d.name} · ${st}` : d.name) : (st || 'PALMERA BAY');
+    if (caption !== lastCaption) { lastCaption = caption; districtEl.textContent = caption; }
+    const dId = d ? d.id : null;
+    if (dId !== curDistrict) {
+      const entered = curDistrict !== null && dId !== null;
+      curDistrict = dId;
+      if (entered && G.started && !G.shotMode) locCard(d.name);
+    }
     drawMap();
   }
 
-  return { toast, update };
+  return { toast, update, bigCard, prompt };
 }

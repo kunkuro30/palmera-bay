@@ -25,11 +25,13 @@ export function createPlayer(scene, G) {
   fig.baseY = groundHeight(spawn.x, spawn.z);
   scene.add(fig.group);
 
+  const _aimDir = new THREE.Vector3();   // build 15: scratch for the aim pitch
   const player = {
     group: fig.group,
     fig,
     car: null,
     health: 100,
+    armour: 0,          // build 12: HUD armour bar; Palmera Arms sells it in build 13
     facing: Math.PI,
     swing: 0,
     aiming: false,
@@ -53,8 +55,9 @@ export function createPlayer(scene, G) {
     nearestCar() {
       const p = this.group.position;
       let best = null;
-      let bestD = 4.4;
+      let bestD = 5.0;
       for (const car of G.allCars()) {
+        if (car.wrecked) continue;   // BUILD 15: a burned husk is not a ride
         const cp = car.group.position;
         const d = Math.hypot(cp.x - p.x, cp.z - p.z);
         if (d < bestD) { best = car; bestD = d; }
@@ -68,6 +71,11 @@ export function createPlayer(scene, G) {
       this.group.visible = false;
       G.audio.door();
       if (car.cls === 'taxi' || car.wasTraffic) G.police.addHeat(80);
+      // Build 12 career stats: every entry counts as driven; a traffic
+      // car taken off the street counts as stolen.
+      G.save.carsDriven = (G.save.carsDriven || 0) + 1;
+      if (car.wasTraffic) G.save.carsStolen = (G.save.carsStolen || 0) + 1;
+      G.persist();
       G.missions.onEnterCar(car);
     },
 
@@ -75,7 +83,7 @@ export function createPlayer(scene, G) {
       if (!this.car) return;
       const car = this.car;
       const p = car.group.position;
-      const ex = p.x + Math.cos(car.heading) * 2.4, ez = p.z - Math.sin(car.heading) * 2.4;
+      const ex = p.x + Math.cos(car.heading) * 2.5, ez = p.z - Math.sin(car.heading) * 2.5;
       this.group.position.set(ex, groundHeight(ex, ez), ez);
       this.fig.baseY = groundHeight(ex, ez);
       this.group.visible = true;
@@ -97,19 +105,70 @@ export function createPlayer(scene, G) {
       if (this.swing > 0) this.swing -= dt;
       if (this.car) {
         this.aiming = false;
+        this.fig.aimPose = null;
         if (this.fig.parts.weapon) this.fig.parts.weapon.visible = false;
-        const drive = (input.down('KeyW', 'ArrowUp') ? 1 : 0) - (input.down('KeyS', 'ArrowDown') ? 1 : 0);
-        const steer = (input.down('KeyA', 'ArrowLeft') ? 1 : 0) - (input.down('KeyD', 'ArrowRight') ? 1 : 0);
+        let drive = (input.down('KeyW', 'ArrowUp') ? 1 : 0) - (input.down('KeyS', 'ArrowDown') ? 1 : 0);
+        let steer = (input.down('KeyA', 'ArrowLeft') ? 1 : 0) - (input.down('KeyD', 'ArrowRight') ? 1 : 0);
+        // BUILD 14: a race countdown holds the car on the grid.
+        if (G.raceLock) { drive = 0; steer = 0; }
         driveStep(this.car, dt, drive, steer);
         collideCar(this.car);
+        const car = this.car;
+        // BUILD 15: nitro — the Comet's kit. SHIFT with the throttle
+        // down spends the gauge (3 s of boost, ~12 s to refill) on
+        // extra pace past the car's own top speed; main.js kicks the
+        // camera FOV while car.boosting holds, and the exhaust flame
+        // + its light ride along here.
+        car.boosting = false;
+        if (car.isComet && (G.save.upgNitro || 0) > 0) {
+          if (car.nitroGauge === undefined) car.nitroGauge = 1;
+          if (input.down('ShiftLeft', 'ShiftRight') && drive > 0 && car.nitroGauge > 0.02 && !car.air) {
+            car.boosting = true;
+            car.nitroGauge = Math.max(0, car.nitroGauge - dt / 3);
+            car.speed = Math.min((car.maxF || 24) + 12, car.speed + 15 * dt);
+          } else {
+            car.nitroGauge = Math.min(1, car.nitroGauge + dt / 12);
+          }
+          if (car.nitroFlame) car.nitroFlame.visible = car.boosting;
+          if (car.nitroLight) car.nitroLight.intensity = car.boosting ? 1.7 + Math.random() * 0.9 : 0;
+        }
+        // BUILD 15: airborne — a stunt ramp has thrown the car
+        // (stunts.js called the launch). driveStep keeps pushing it
+        // forward along the ground plane; here the height is flown
+        // ballistically until the wheels meet the ground again.
+        if (car.air) {
+          car.air.t += dt;
+          car.air.vy -= 16 * dt;
+          car.air.y += car.air.vy * dt;
+          const gy = groundHeight(car.group.position.x, car.group.position.z);
+          if (car.air.y <= gy) {
+            car.group.position.y = gy;
+            const airT = car.air.t, rampIdx = car.air.ramp;
+            car.air = null;
+            if (G.stunts) G.stunts.onLand(car, airT, rampIdx);
+          } else {
+            car.group.position.y = car.air.y;
+          }
+        }
+        G.save.distance = (G.save.distance || 0) + Math.abs(this.car.speed) * dt;
         return;
       }
       // On foot: camera-relative WASD. While aiming, movement becomes a
       // slow strafe and the figure faces the camera's aim direction.
       const camYaw = G.camYaw;
       this.aiming = !!input.aiming;
-      if (this.fig.parts.weapon) this.fig.parts.weapon.visible = this.aiming;
-      let mx = 0, mz = 0;
+      // BUILD 15 (HumanAnimator adoption): while aiming, hand
+      // poseFigure the camera's real pitch so the gun arm, torso and
+      // head track it; recoil (kicked in by combat.js per shot)
+      // decays here — poseFigure receives no dt of its own.
+      if (this.aiming) {
+        G.camera.getWorldDirection(_aimDir);
+        this.fig.aimPose = { pitch: Math.asin(clamp(_aimDir.y, -1, 1)) };
+      } else {
+        this.fig.aimPose = null;
+      }
+      if (this.fig.recoil) this.fig.recoil = Math.max(0, this.fig.recoil - dt * 5);
+      if (this.fig.parts.weapon) this.fig.parts.weapon.visible = this.aiming;      let mx = 0, mz = 0;
       if (input.down('KeyW', 'ArrowUp')) { mx += Math.sin(camYaw); mz += Math.cos(camYaw); }
       if (input.down('KeyS', 'ArrowDown')) { mx -= Math.sin(camYaw); mz -= Math.cos(camYaw); }
       if (input.down('KeyA', 'ArrowLeft')) { mx += Math.cos(camYaw); mz -= Math.sin(camYaw); }
@@ -149,18 +208,18 @@ export function createPlayer(scene, G) {
     const p = car.group.position;
     p.x = clamp(p.x, -312, 312);
     p.z = clamp(p.z, -312, 322);
-    const hit = hitsCollider(G.colliders, p.x, p.z, 1.6);
+    const hit = hitsCollider(G.colliders, p.x, p.z, 1.8);
     if (hit) {
       // Push out along the smaller penetration axis and kill the speed.
-      const dxl = Math.abs(p.x - (hit.x0 - 1.6));
-      const dxr = Math.abs(p.x - (hit.x1 + 1.6));
-      const dzl = Math.abs(p.z - (hit.z0 - 1.6));
-      const dzr = Math.abs(p.z - (hit.z1 + 1.6));
+      const dxl = Math.abs(p.x - (hit.x0 - 1.8));
+      const dxr = Math.abs(p.x - (hit.x1 + 1.8));
+      const dzl = Math.abs(p.z - (hit.z0 - 1.8));
+      const dzr = Math.abs(p.z - (hit.z1 + 1.8));
       const m = Math.min(dxl, dxr, dzl, dzr);
-      if (m === dxl) p.x = hit.x0 - 1.6;
-      else if (m === dxr) p.x = hit.x1 + 1.6;
-      else if (m === dzl) p.z = hit.z0 - 1.6;
-      else p.z = hit.z1 + 1.6;
+      if (m === dxl) p.x = hit.x0 - 1.8;
+      else if (m === dxr) p.x = hit.x1 + 1.8;
+      else if (m === dzl) p.z = hit.z0 - 1.8;
+      else p.z = hit.z1 + 1.8;
       car.speed *= -0.25;
       if (Math.abs(car.speed) > 6) G.police.addHeat(25);
     }

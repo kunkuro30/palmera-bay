@@ -1,4 +1,4 @@
-// PALMERA BAY REBORN — a working gta6-01 entry (Node 22, standard library only): the game is
+// GO RIO RIO — a working gta6-01 entry (Node 22, standard library only): the game is
 // this directory's game/ folder, plain static files a desktop browser loads offline
 // (game/index.html and its ES modules over a vendored three.min.js, no network request), and
 // the program hands it in. It copies game/ and screenshots/ from beside this file to /output
