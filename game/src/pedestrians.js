@@ -1,3 +1,4 @@
+// GO RIO RIO · pedestrians.js — the living crowd: shoppers, walkers, beach life, keepers.
 // The living crowd. Four populations share the Polygon War figure kit:
 //  - shoppers stroll the promenade and stop at shop fronts to "buy",
 //  - city walkers pace the SIDEWALKS and the park path,
@@ -424,14 +425,15 @@ export function createCrowd(scene, rng) {
   // draws the coastline — reports 0.45–1.15 m of water there AND across
   // the whole drift disc, so nobody can end up paddling on sand. The old
   // fixed z-band ignored the Fourier coastline and beached half of them.
-  // baseY sits 0.20 BELOW the surface so the body is in the water with
-  // just the back and head breaking it. Anchors are resampled until the
+  // baseY sits 0.45 BELOW the surface (DEFECT FIX C-1: chest depth —
+  // at 0.20 the body lay flat ON the water instead of in it).
+  // Anchors are resampled until the
   // test passes; tools/physics_check.py re-verifies every anchor in-page.
   const swimmers = [];
   function addSwimmer(x, z, surfaceY) {
     const fig = makeFigure({ skin: pick(rng, PALETTE.skin), shirt: pick(rng, PALETTE.shirts), pants: pick(rng, PALETTE.pants), shorts: true });
     fig.group.position.set(x, 0, z);
-    fig.baseY = surfaceY - 0.20;
+    fig.baseY = surfaceY - 0.45;
     fig.baseX = x;
     fig.baseZ = z;
     scene.add(fig.group);

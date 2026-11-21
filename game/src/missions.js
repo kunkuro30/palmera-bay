@@ -1,3 +1,4 @@
+// GO RIO RIO · missions.js — the eight story jobs, expressed as staged data.
 // Eight story jobs in three chapters (build 12) — Rio's fight to keep
 // his family's beach kiosk row out of SunCoast Leisure's buyout. The
 // first three jobs are the original chain (pier run, hot car, heist
@@ -143,7 +144,16 @@ const LETTERS = 'ABCDEFGH';
 
 export function createMissions(scene, G) {
   let beacon = null;
-  let jobIdx = 0;           // 0..7 active job, 8 = all done
+  // DEFECT FIX (B-1): restore story progression from the save — a
+  // reload resumes at the first unfinished job instead of restarting
+  // at Job 1 (which also let finished jobs be re-farmed for payouts).
+  // jobsDone is clamped 0..8 on load (save.js); clamp again here so
+  // jobIdx can never point past the finale. activateJob() below then
+  // runs for the restored job, re-spawning its grab-case; the job cars
+  // already exist from boot (spawnJobCar). At 8 the story is complete
+  // and currentObjective() reports free roam — no job becomes current
+  // again.
+  let jobIdx = Math.max(0, Math.min(JOBS.length, Math.floor((G.save && G.save.jobsDone) || 0)));   // 0..7 active job, 8 = all done
   let stageIdx = 0;
   let override = null;      // screenshot scenes replace the objective
   let caseMesh = null;
@@ -152,8 +162,10 @@ export function createMissions(scene, G) {
 
   function makeBeacon() {
     const g = new THREE.Group();
-    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 26, 14, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }));
+    // DEFECT FIX (N-5): a slim, additive beam (r 0.85) instead of the
+    // opaque 2.2 m monolith slab; update() fades it with distance.
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 26, 14, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
     cyl.position.y = 13;
     g.add(cyl);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(2.4, 0.22, 8, 22), lam(0xffd23e, { emissive: 0x554400 }));
@@ -215,6 +227,7 @@ export function createMissions(scene, G) {
     JOBS.forEach((j, i) => {
       if (!j.car || jobCars.has(i)) return;
       const car = makeCar(j.car.color, { cls: j.car.cls, kind: 'mission' });
+      car.isJobCar = true;   // DEFECT FIX (B-2): story cars are indestructible — wrecks.js skips their damage
       car.group.position.set(j.car.x, groundHeight(j.car.x, j.car.z), j.car.z);
       car.heading = j.car.heading;
       car.group.rotation.y = j.car.heading;
@@ -306,6 +319,11 @@ export function createMissions(scene, G) {
     if (beacon.visible) {
       beacon.rotation.y = time * 0.8;
       beacon.position.y = (beacon.userData.baseY || 0) + Math.sin(time * 2) * 0.3;
+      // DEFECT FIX (N-5): distance fade — the beam guides up close and
+      // melts into the sky from across the map instead of dominating it.
+      const bp = G.playerPos();
+      const bd = Math.hypot(bp.x - beacon.position.x, bp.z - beacon.position.z);
+      beacon.children[0].material.opacity = Math.max(0.05, Math.min(0.22, 1.15 - bd / 260));
     }
     if (override) return obj;
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Run from the repo root against the dev server on 127.0.0.1:8901 (see BASE below).
 """Palmera Bay physics self-check (physics standard #5).
 
 Loads the real game in headless Chrome (same pipeline as capture3.py),
@@ -181,10 +182,10 @@ CHECK_JS = r"""
     out.swimmers.push({
       x: +p.x.toFixed(1), z: +p.z.toFixed(1),
       depthNow: +depthNow.toFixed(2), depthAnchor: +depthAnchor.toFixed(2),
-      yOff: +(p.y - (surface - 0.20)).toFixed(2),
+      yOff: +(p.y - (surface - 0.45)).toFixed(2),
       pass: depthNow >= 0.30 && depthNow <= 1.35 &&
             depthAnchor >= 0.45 && depthAnchor <= 1.15 &&
-            Math.abs(p.y - (surface - 0.20)) <= 0.08,
+            Math.abs(p.y - (surface - 0.45)) <= 0.08,
     });
   }
 
@@ -345,7 +346,7 @@ else:
 if swim_report is not None:
     bad = [s for s in swim_report if not s["pass"]]
     print(f"SWIMMERS: {len(swim_report) - len(bad)}/{len(swim_report)} PASS"
-          f" (depth now 0.30–1.35, anchor 0.45–1.15, body at surface-0.20)")
+          f" (depth now 0.30–1.35, anchor 0.45–1.15, body at surface-0.45)")
     for s in bad:
         print(f"  FAIL swimmer at ({s['x']}, {s['z']}): depthNow={s['depthNow']} depthAnchor={s['depthAnchor']} yOff={s['yOff']}")
     failures += len(bad)

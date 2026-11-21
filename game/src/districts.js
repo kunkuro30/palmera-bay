@@ -1,3 +1,4 @@
+// GO RIO RIO · districts.js — named districts and street-name lookup by position.
 // Districts of Palmera Bay (build 12): the named areas the pause map
 // labels, the HUD caption reads and the location title cards announce.
 // Tests run in order — first match wins. Street names reuse the roads

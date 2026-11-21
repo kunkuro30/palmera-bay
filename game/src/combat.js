@@ -1,3 +1,4 @@
+// GO RIO RIO · combat.js — fists, TPS gunplay and police contact damage.
 // Combat, two flavours:
 //  - Fists: a punch that knocks a pedestrian flat (and is very much a crime).
 //  - TPS gunplay: while aiming (right mouse held), a left click fires a

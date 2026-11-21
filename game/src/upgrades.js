@@ -1,3 +1,4 @@
+// GO RIO RIO · upgrades.js — the Palmera Motors garage upgrades for Rio's Comet.
 // BUILD 15 — the Palmera Motors garage, for Rio's Comet only: three
 // engine levels (top speed + acceleration), three armour levels
 // (wrecks.js shaves the damage the Comet takes), and a one-time nitro

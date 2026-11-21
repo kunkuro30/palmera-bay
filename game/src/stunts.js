@@ -1,3 +1,4 @@
+// GO RIO RIO · stunts.js — the five stunt ramps: launch calls and landing judgement.
 // BUILD 15 — stunt jumps. Five ramps on grounded spots around the
 // bay (a beach dune, the airport service road, the garrison dirt
 // road, a downtown street, a desert rise on the freeway). Hit one

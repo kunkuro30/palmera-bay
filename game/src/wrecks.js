@@ -1,3 +1,4 @@
+// GO RIO RIO · wrecks.js — car hit points, explosions and burning wrecks.
 // BUILD 15 — car health, explosions and burning wrecks. Until now the
 // bay's cars were indestructible scenery; now every car carries hit
 // points (traffic / parked / highway 100, police cruisers 140, Rio's
@@ -200,6 +201,11 @@ export function createWrecks(scene, G) {
 
   function damageCar(car, dmg) {
     if (!car || car.wrecked || !(dmg > 0)) return;
+    // DEFECT FIX (B-2): job cars take no damage from any path (gunfire
+    // via combat.js, collisions and chain explosions via here) — a
+    // wrecked job car soft-locked the story, since the steal stage can
+    // only advance by entering that exact car.
+    if (car.isJobCar) return;
     let d = dmg;
     if (car.isComet) d *= (1 - 0.18 * (G.save.upgArmor || 0));
     car.hp = hpOf(car) - d;

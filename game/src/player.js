@@ -1,3 +1,4 @@
+// GO RIO RIO · player.js — Rio on foot and in cars: movement, collision, driving, aim.
 // The player: the main character in street-casual dress — orange jacket
 // over a white tee, jeans, red sneakers (deliberately NOT a tactical
 // soldier). On foot he walks/runs with building collision; near a car, E
@@ -6,7 +7,7 @@
 // over. TPS gunplay: hold right-mouse to aim over the shoulder (crosshair
 // up, gun arm raised), left-click to fire — see combat.shoot.
 
-import { WORLD, TUNING, groundHeight } from './config.js';
+import { WORLD, TUNING, groundHeight, heightAt, waterDepthAt } from './config.js';
 import { makeFigure, poseFigure } from './characters.js';
 import { driveStep } from './vehicles.js';
 import { hitsCollider } from './world.js';
@@ -113,6 +114,9 @@ export function createPlayer(scene, G) {
         if (G.raceLock) { drive = 0; steer = 0; }
         driveStep(this.car, dt, drive, steer);
         collideCar(this.car);
+        // DEFECT FIX (M-2): the driven car is held inside the bay too.
+        clampToBay(this.car.group.position);
+        this.car.group.position.y = groundHeight(this.car.group.position.x, this.car.group.position.z);
         const car = this.car;
         // BUILD 15: nitro — the Comet's kit. SHIFT with the throttle
         // down spends the gauge (3 s of boost, ~12 s to refill) on
@@ -181,13 +185,21 @@ export function createPlayer(scene, G) {
       }
       if (moving) {
         mx /= len; mz /= len;
-        const speed = this.aiming ? 2.6 : (input.down('ShiftLeft', 'ShiftRight') ? TUNING.runSpeed : TUNING.walkSpeed);
         const p = this.group.position;
+        // DEFECT FIX (M-1): swimming. In water deeper than ~1.2 m Rio
+        // swims at half speed, held at chest depth (surface − 0.35) —
+        // no more walking the seabed fully submerged. In the shallows
+        // he walks on the ground exactly as before.
+        const swimming = waterDepthAt(p.x, p.z) > 1.2;
+        const baseSpeed = this.aiming ? 2.6 : (input.down('ShiftLeft', 'ShiftRight') ? TUNING.runSpeed : TUNING.walkSpeed);
+        const speed = swimming ? baseSpeed * 0.5 : baseSpeed;
         const nx = clamp(p.x + mx * speed * dt, -312, 312);
         const nz = clamp(p.z + mz * speed * dt, -312, 322);
         if (!hitsCollider(G.colliders, nx, p.z, 0.7)) p.x = nx;
         if (!hitsCollider(G.colliders, p.x, nz, 0.7)) p.z = nz;
-        p.y = groundHeight(p.x, p.z);
+        clampToBay(p);   // DEFECT FIX (M-2): on foot too, the bay turns you back
+        const dw = waterDepthAt(p.x, p.z);
+        p.y = dw > 1.2 ? (dw + heightAt(p.x, p.z)) - 0.35 : groundHeight(p.x, p.z);
         this.fig.baseY = p.y;
         if (!this.aiming) {
           const want = Math.atan2(mx, mz);
@@ -196,6 +208,11 @@ export function createPlayer(scene, G) {
         }
         poseFigure(this.fig, time, speed);
       } else {
+        // Standing still in deep water still floats at swim depth.
+        const p = this.group.position;
+        clampToBay(p);   // DEFECT FIX (M-2): the boundary holds even at a standstill
+        const dw = waterDepthAt(p.x, p.z);
+        if (dw > 1.2) { p.y = (dw + heightAt(p.x, p.z)) - 0.35; this.fig.baseY = p.y; }
         poseFigure(this.fig, time, 0);
       }
       if (this.swing > 0 && !this.aiming) {
@@ -204,22 +221,51 @@ export function createPlayer(scene, G) {
     },
   };
 
+  // DEFECT FIX (M-2): the world edge. All gameplay — the race rings
+  // included — lives inside ±260 m, so at 340 m from the centre the
+  // bay turns you back: the position is pushed onto the boundary
+  // circle along its own direction, on foot and in a car alike.
+  let seaToastAt = -99;
+  function clampToBay(pos) {
+    const d = Math.hypot(pos.x, pos.z);
+    if (d <= 340) return;
+    const k = 340 / d;
+    pos.x *= k;
+    pos.z *= k;
+    if (G.time - seaToastAt > 8) {
+      seaToastAt = G.time;
+      if (G.hud && G.hud.toast) G.hud.toast('Open sea — the bay turns you back');
+    }
+  }
+
   function collideCar(car) {
     const p = car.group.position;
     p.x = clamp(p.x, -312, 312);
     p.z = clamp(p.z, -312, 322);
-    const hit = hitsCollider(G.colliders, p.x, p.z, 1.8);
-    if (hit) {
-      // Push out along the smaller penetration axis and kill the speed.
-      const dxl = Math.abs(p.x - (hit.x0 - 1.8));
-      const dxr = Math.abs(p.x - (hit.x1 + 1.8));
-      const dzl = Math.abs(p.z - (hit.z0 - 1.8));
-      const dzr = Math.abs(p.z - (hit.z1 + 1.8));
+    // DEFECT FIX (N-3): two collision circles — front and rear, ±1.2 m
+    // along the heading, r 1.3 — instead of one centre point. A sedan
+    // is 4.7 m long, so the centre-only test (r 1.8) let the nose sink
+    // ~0.5 m into a wall before the hit registered. Each circle that
+    // hits pushes the CAR out along that circle's smallest penetration
+    // axis; the speed kill / heat penalty fires once per step, as before.
+    const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+    let resolved = false;
+    for (const s of [1.2, -1.2]) {
+      const cx = p.x + fx * s, cz = p.z + fz * s;
+      const hit = hitsCollider(G.colliders, cx, cz, 1.3);
+      if (!hit) continue;
+      const dxl = Math.abs(cx - (hit.x0 - 1.3));
+      const dxr = Math.abs(cx - (hit.x1 + 1.3));
+      const dzl = Math.abs(cz - (hit.z0 - 1.3));
+      const dzr = Math.abs(cz - (hit.z1 + 1.3));
       const m = Math.min(dxl, dxr, dzl, dzr);
-      if (m === dxl) p.x = hit.x0 - 1.8;
-      else if (m === dxr) p.x = hit.x1 + 1.8;
-      else if (m === dzl) p.z = hit.z0 - 1.8;
-      else p.z = hit.z1 + 1.8;
+      if (m === dxl) p.x += (hit.x0 - 1.3) - cx;
+      else if (m === dxr) p.x += (hit.x1 + 1.3) - cx;
+      else if (m === dzl) p.z += (hit.z0 - 1.3) - cz;
+      else p.z += (hit.z1 + 1.3) - cz;
+      resolved = true;
+    }
+    if (resolved) {
       car.speed *= -0.25;
       if (Math.abs(car.speed) > 6) G.police.addHeat(25);
     }

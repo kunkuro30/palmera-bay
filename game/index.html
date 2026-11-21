@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- GO RIO RIO — single-page shell: the full-screen canvas, the cinematic
+     grade overlay and the start screen live here; all game logic is in src/. -->
 <title>GO RIO RIO</title>
 <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==">
 <style>
@@ -18,6 +20,12 @@
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   .hud { position: fixed; z-index: 5; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.55); pointer-events: none; }
+  /* DEFECT FIX (M-3): the gameplay HUD stays hidden behind the start
+     screen and appears only once play begins (main.js adds
+     body.started in beginPlay, and at boot for ?shot= scenes). This
+     also leaves the start screen's own .controls as the ONE help text
+     before play — the in-game #hint takes over afterwards. */
+  body:not(.started) .hud { display: none; }
   #brand { top: 14px; left: 16px; }
   #brand .name { font-size: 30px; font-weight: 900; letter-spacing: 2px; color: #ffe9a8; -webkit-text-stroke: 1px rgba(90,50,0,.35); }
   #brand .sub { font-size: 12px; letter-spacing: 4px; color: #bfeaff; margin-top: -4px; }
@@ -177,7 +185,7 @@
 
 <div id="startScreen">
   <div class="big">GO RIO RIO</div>
-  <div class="strap">A SUN-SOAKED OPEN-WORLD CRIME STORY</div>
+  <div class="strap">SUNNY SIDE OF CRIME</div>
   <div class="hook">SunCoast Leisure is buying <b>Rio's</b> family kiosk row out from under him — pier, permits and all. Take the jobs. Work the bay. <b>Take it back.</b></div>
   <div class="play">CLICK TO PLAY</div>
   <div class="savenote">PROGRESS AUTOSAVES IN THIS BROWSER</div>

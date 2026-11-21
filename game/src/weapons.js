@@ -1,3 +1,4 @@
+// GO RIO RIO · weapons.js — the four-slot weapon system and its BAY REP gates.
 // BUILD 14 — the multi-weapon system. Four slots: 1 FISTS, 2 PISTOL
 // (owned from the start), 3 SMG and 4 RIFLE, the last two bought at
 // Palmera Arms and gated by BAY REP (Brisa-style rank locks: SMG needs

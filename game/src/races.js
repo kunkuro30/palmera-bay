@@ -1,3 +1,4 @@
+// GO RIO RIO · races.js — the two street races and their checkpoint rings.
 // BUILD 14 — street races. Two routes with glowing checkpoint rings
 // in the beacon language (flat ring + light column, orange for races):
 //   RACE 1 · OCEAN SPRINT — a start grid on Ocean Drive, six rings

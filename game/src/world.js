@@ -1,3 +1,4 @@
+// GO RIO RIO · world.js — builds the island terrain and everything standing on it.
 // The world builder: one organic island, sea on every side. The terrain is
 // a single vertex-coloured mesh shaped by config.heightAt — sand at the
 // shore, grass inland, dry desert in the north-east, rock on the mountain.
@@ -459,12 +460,18 @@ export function buildWorld(scene, rng) {
       g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(8,60,80,0.06)';
       g.fillRect(Math.random() * s, Math.random() * s, 2, 2);
     }
+    // DEFECT FIX (C-2): the wave strokes used to sit on a strict
+    // 17 px grid at full contrast — the sea read as repeating white
+    // stripe arcs. Now each stroke is jittered off the grid, softer
+    // (alpha 0.07–0.16) and randomly wobbled, so the field breaks up.
     for (let i = 0; i < 16; i++) {
-      g.strokeStyle = i % 2 ? 'rgba(255,255,255,.20)' : 'rgba(160,225,245,.26)';
-      g.lineWidth = i % 2 ? 1.6 : 2.6;
+      const a = 0.07 + Math.random() * 0.09;
+      g.strokeStyle = i % 2 ? `rgba(255,255,255,${a.toFixed(3)})` : `rgba(160,225,245,${(a + 0.03).toFixed(3)})`;
+      g.lineWidth = 1.2 + Math.random() * 1.8;
       g.beginPath();
-      const y = (i * 17) % s;
-      g.moveTo(0, y); g.bezierCurveTo(s * 0.3, y + 6, s * 0.6, y - 6, s, y); g.stroke();
+      const y = ((i * 17) + Math.random() * 11) % s;
+      const wob = 3 + Math.random() * 6;
+      g.moveTo(0, y); g.bezierCurveTo(s * 0.3, y + wob, s * 0.6, y - wob, s, y); g.stroke();
     }
   }, [42, 42]);
   const water = new THREE.Mesh(new THREE.PlaneGeometry(1500, 1500),

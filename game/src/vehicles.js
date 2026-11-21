@@ -1,3 +1,4 @@
+// GO RIO RIO · vehicles.js — the smooth-design car builder and the traffic system.
 // Smooth-design cars (build 8) and the traffic system. Bodies are single
 // rounded capsule loaves with glass canopies (see the design note above
 // makeCar), wheels spin with speed, taxis get a roof sign, trucks a cargo
@@ -412,13 +413,33 @@ export function createTraffic(scene, rng, count) {
   const cars = [];
   const routes = [];
   // City routes only: avenues run the city span, streets the city width.
+  // DEFECT FIX (N-4): the park (x 56..120, z 44..88) is a lawn, not a
+  // road — the avenue x=100 and street z=80 routes are split into two
+  // segments with a cut-out at the park kerbs (the wrap margin of 6 m
+  // in update() stays on the road side), instead of running straight
+  // across the grass.
+  const PARK = WORLD.park;
   for (const x of WORLD.avenues) {
-    routes.push({ axis: 'z', at: x, dir: 1, min: 20, max: 194 });
-    routes.push({ axis: 'z', at: x, dir: -1, min: 20, max: 194 });
+    if (x > PARK.x0 && x < PARK.x1) {
+      for (const [min, max] of [[20, PARK.z0 - 8], [PARK.z1 + 8, 194]]) {
+        routes.push({ axis: 'z', at: x, dir: 1, min, max });
+        routes.push({ axis: 'z', at: x, dir: -1, min, max });
+      }
+    } else {
+      routes.push({ axis: 'z', at: x, dir: 1, min: 20, max: 194 });
+      routes.push({ axis: 'z', at: x, dir: -1, min: 20, max: 194 });
+    }
   }
   for (const z of WORLD.streets.concat([WORLD.oceanDrive])) {
-    routes.push({ axis: 'x', at: z, dir: 1, min: -164, max: 154 });
-    routes.push({ axis: 'x', at: z, dir: -1, min: -164, max: 154 });
+    if (z > PARK.z0 && z < PARK.z1) {
+      for (const [min, max] of [[-164, PARK.x0 - 8], [PARK.x1 + 8, 154]]) {
+        routes.push({ axis: 'x', at: z, dir: 1, min, max });
+        routes.push({ axis: 'x', at: z, dir: -1, min, max });
+      }
+    } else {
+      routes.push({ axis: 'x', at: z, dir: 1, min: -164, max: 154 });
+      routes.push({ axis: 'x', at: z, dir: -1, min: -164, max: 154 });
+    }
   }
 
   for (let i = 0; i < count; i++) {

@@ -1,3 +1,4 @@
+// GO RIO RIO · fleet.js — the 13-type vehicle fleet: aircraft, emergency and civil.
 // Palmera Fleet — the user-supplied fleet module (13 vehicle types),
 // converted to the game's module pattern (global THREE from the vendored
 // three.min.js, Lambert-style helpers kept local) and integrated in
@@ -118,18 +119,22 @@ function smoothSedan(root, anim, bodyColor, livery) {
   ];
   let lights = null;
   if (livery) {
-    const redStrobo = mat(0xef4444, { emissive: 0xef4444, emissiveIntensity: 1.4 });
-    const blueStrobo = mat(0x3b82f6, { emissive: 0x3b82f6, emissiveIntensity: 1.4 });
-    addPart(root, new THREE.BoxGeometry(0.95, 0.07, 0.32), dark, [0, 1.50, -0.20]);
-    const rLight = addPart(root, new THREE.BoxGeometry(0.42, 0.13, 0.26), redStrobo, [-0.24, 1.60, -0.20]);
-    const bLight = addPart(root, new THREE.BoxGeometry(0.42, 0.13, 0.26), blueStrobo, [0.24, 1.60, -0.20]);
+    const redStrobo = mat(0xef4444, { emissive: 0xef4444, emissiveIntensity: 1.6 });
+    const blueStrobo = mat(0x3b82f6, { emissive: 0x3b82f6, emissiveIntensity: 1.6 });
+    // DEFECT FIX (C-3): the light bar now spans the roof — a wide dark
+    // base rail with two chunky emissive halves, red left / blue
+    // right — so it reads as a light bar at street distance instead
+    // of a white oval "fried egg" on the roof panel.
+    addPart(root, new THREE.BoxGeometry(1.30, 0.07, 0.32), dark, [0, 1.50, -0.20]);
+    const rLight = addPart(root, new THREE.BoxGeometry(0.60, 0.13, 0.26), redStrobo, [-0.31, 1.60, -0.20]);
+    const bLight = addPart(root, new THREE.BoxGeometry(0.60, 0.13, 0.26), blueStrobo, [0.31, 1.60, -0.20]);
     anim.strobos.push(rLight, bLight);
     lights = { red: rLight, blue: bLight };
     const barMat = mat(0x94a3b8, { metalness: 0.85, roughness: 0.3 });
     addPart(root, new THREE.BoxGeometry(1.30, 0.30, 0.10), barMat, [0, 0.52, 2.32]);
     addPart(root, new THREE.BoxGeometry(0.09, 0.42, 0.09), barMat, [-0.45, 0.45, 2.28]);
     addPart(root, new THREE.BoxGeometry(0.09, 0.42, 0.09), barMat, [0.45, 0.45, 2.28]);
-    frames.push({ name: 'light bar', x: [-0.48, 0.48], y: [1.47, 1.67], z: [-0.36, -0.04] });
+    frames.push({ name: 'light bar', x: [-0.65, 0.65], y: [1.47, 1.67], z: [-0.36, -0.04] });
     frames.push({ name: 'bull bar', x: [-0.65, 0.65], y: [0.37, 0.67], z: [2.26, 2.38] });
   }
   return { frames, lights, brakeMat: tail };

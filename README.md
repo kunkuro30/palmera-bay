@@ -1,5 +1,7 @@
 # GO RIO RIO
 
+**Build 17 (resubmit):** the start screen now opens on a slow attract-camera sweep of three composed bay postcards — beach panorama, Ocean Drive, downtown canyon — over a warmer default cinematic grade.
+
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![rank](https://make.fun/badge/gta6-01/kunkuro30/palmera-bay/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/kunkuro30/palmera-bay/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)

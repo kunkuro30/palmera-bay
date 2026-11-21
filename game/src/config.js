@@ -1,3 +1,4 @@
+// GO RIO RIO · config.js — island layout data and the terrain/water height queries.
 // Palmera Bay — an island city with a Los-Santos-shaped layout: one organic
 // island ringed by sea on every side, the city grid in the SOUTH (downtown
 // towers, shop row, clinic), the tourist beach and pier on the south shore,

@@ -1,3 +1,4 @@
+// GO RIO RIO · dialogue.js — portrait dialogue boxes and the cast's spoken lines.
 // Portrait dialogue (build 12): flat vector-style portrait boxes — a
 // canvas portrait drawn in code from coloured shapes (no external
 // assets), the speaker's name + role, and their line. Missions show one

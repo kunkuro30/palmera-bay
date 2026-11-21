@@ -1,3 +1,4 @@
+// GO RIO RIO · characters.js — the shared real-proportion human figure kit.
 // characters.js — BUILD 8: real-proportion figures. The old "Polygon
 // War" big-head kit (2.04 tall, head ~1:3.5) is retired by the user's
 // direct order: the winners' look is a NORMAL adult — 1.78 units tall,

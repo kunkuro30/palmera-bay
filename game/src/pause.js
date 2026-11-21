@@ -1,3 +1,4 @@
+// GO RIO RIO · pause.js — the four-tab pause suite: map, missions, stats, controls.
 // The pause suite (build 12): ESC or P freezes the bay and opens a
 // four-tab panel — MAP (the full island with named districts, service
 // icons and the player marker), MISSIONS (all eight jobs with giver,

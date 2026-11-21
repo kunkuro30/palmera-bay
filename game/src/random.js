@@ -1,3 +1,4 @@
+// GO RIO RIO · random.js — seeded RNG (mulberry32) and small numeric helpers.
 // A tiny seeded RNG (mulberry32) so screenshot scenes and city dressing are
 // deterministic: the same seed always builds the same Palmera Bay.
 export function makeRng(seed) {

@@ -1,3 +1,4 @@
+// GO RIO RIO · main.js — boot, world assembly and the fixed-step main loop.
 // Palmera Bay Reborn — boot and the main loop. Builds the city, the crowd,
 // traffic, police, missions and the player into one shared game object G,
 // then either runs the live game (start screen, follow camera, fixed-step
@@ -279,8 +280,8 @@ function updateAttractCamera() {
   }
   _av.set(...cur.pos).lerp(new THREE.Vector3(...nxt.pos), k);
   _al.set(...cur.look).lerp(new THREE.Vector3(...nxt.look), k);
-  attractPos.lerp(_av, 0.08);
-  attractLook.lerp(_al, 0.08);
+  attractPos.lerp(_av, 0.085);
+  attractLook.lerp(_al, 0.085);
   camera.position.copy(attractPos);
   camera.lookAt(attractLook);
 }
@@ -334,11 +335,12 @@ const startScreen = document.getElementById('startScreen');
 function beginPlay() {
   if (G.started) return;
   G.started = true;
+  document.body.classList.add('started');   // DEFECT FIX (M-3): reveals the gameplay HUD (index.html CSS)
   startScreen.classList.add('hidden');
   G.audio.unlock();
   G.hud.toast('Welcome to Palmera Bay, Rio');
 }
-if (shotName) startScreen.classList.add('hidden');
+if (shotName) { startScreen.classList.add('hidden'); document.body.classList.add('started'); }
 startScreen.addEventListener('click', beginPlay);
 
 // ---- simulation step -------------------------------------------------------------

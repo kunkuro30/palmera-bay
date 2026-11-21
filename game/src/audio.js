@@ -1,3 +1,4 @@
+// GO RIO RIO · audio.js — all sound is synthesized WebAudio; there are no audio files.
 // WebAudio synth: no audio files, everything is oscillators and noise.
 // The context is created lazily on the first user gesture (browser policy).
 

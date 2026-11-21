@@ -1,3 +1,4 @@
+// GO RIO RIO · fx.js — the shared procedural sprite behind every glow and puff.
 // BUILD 15 — shared effect textures. Every glow, flame, smoke puff and
 // explosion flash in the game samples ONE procedural radial-gradient
 // sprite: soft white at the core falling to fully transparent at the

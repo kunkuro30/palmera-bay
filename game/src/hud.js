@@ -1,3 +1,4 @@
+// GO RIO RIO · hud.js — DOM HUD readouts, mission card, toasts and the island minimap.
 // HUD: DOM readouts (brand, wanted stars, cash, clock, health + armour,
 // weapon and BAY REP chips), the mission card (chapter, job, stage pips,
 // NEXT line), toasts, big centre cards (chapter titles, JOB COMPLETE),
@@ -240,11 +241,12 @@ export function createHud(G) {
     // BUILD 15: the cinematic grade — a CSS vignette + warm wash over
     // the whole frame (no post-processing chain), breathing up to
     // full warmth across the golden hour, 17:00–19:00 on the clock.
-    // BUILD 17 (resubmit): the base warmth is raised (0.38 → 0.55) so
-    // the default midday look reads sun-soaked instead of pale.
+    // BUILD 17 (resubmit): the base warmth is raised (0.38 → 0.55, then
+    // fine-tuned to 0.56) so the default midday look reads sun-soaked
+    // instead of pale.
     if (gradeEl) {
       const golden = Math.max(0, 1 - Math.abs(mins - 1080) / 90);
-      gradeEl.style.opacity = (0.55 + 0.45 * golden).toFixed(2);
+      gradeEl.style.opacity = (0.56 + 0.45 * golden).toFixed(2);
     }
     healthEl.style.width = Math.max(0, G.player.health) + '%';
     armourEl.style.width = Math.max(0, Math.min(100, G.player.armour || 0)) + '%';

@@ -1,3 +1,4 @@
+// GO RIO RIO · standing.js — per-district standing points and their percentages.
 // BUILD 15 — district standing. The top-3 games wear their territory
 // percentages on the map; Palmera Bay now earns its own. Story jobs,
 // courier deliveries, race finishes and stunt jumps bank standing

@@ -1,3 +1,4 @@
+// GO RIO RIO · police.js — wanted heat, patrols, pursuit steering and escalation.
 // Police: wanted heat, patrol cruisers that become pursuers, and officers
 // on foot for close scenes. Heat rises with crime and falls while unseen;
 // stars follow heat. Pursuit is simple steering toward the player's

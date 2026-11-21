@@ -1,3 +1,4 @@
+// GO RIO RIO · shots.js — the deterministic ?shot= scenes behind screenshots and checks.
 // The deterministic screenshot scenes behind ?shot=<name>&seed=N. The four
 // submission scenes are chase (cover), beach, city and mission — mission is
 // staged as a third-person SHOOTOUT: over-the-shoulder aim, crosshair up,
@@ -258,14 +259,15 @@ function mission(G) {
     x: -108, z: WORLD.shopsZ + 7, letter: 'C',
     label: 'JOB 3 — BAY HEIST · Lift the case at SUSHI BAY',
   });
-  // Frozen tracer + muzzle flash from the MC's gun to the standing gangster.
+  // Frozen tracer from the MC's gun to the standing gangster.
+  // DEFECT FIX (C-7): no static muzzle-flash mesh — the frozen flat
+  // yellow sphere read as a sticker disc on the pistol in the shipped
+  // shot; the tracer line alone sells the shot. (Live combat keeps
+  // its real animated flash in combat.js — untouched.)
   const baseY = gy(-92.5, 188.5);
   const gunTip = new THREE.Vector3(-93.55, baseY + 1.38, 188.58);
   const tracerGeo = new THREE.BufferGeometry().setFromPoints([gunTip, new THREE.Vector3(-106, baseY + 1.12, 189.5)]);
   G.scene.add(new THREE.Line(tracerGeo, new THREE.LineBasicMaterial({ color: 0xffe9a8 })));
-  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffd23e }));
-  flash.position.copy(gunTip);
-  G.scene.add(flash);
   return {
     frame(dt) {
       ambient(G, dt);

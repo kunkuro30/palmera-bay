@@ -1,3 +1,4 @@
+// GO RIO RIO · save.js — localStorage persistence for cash, jobs, stats and RESPECT.
 // localStorage persistence: cash, jobs finished and the career stat
 // counters (build 12) survive a reload. Storage can be unavailable
 // (private windows) — failures are swallowed and the save then lasts
@@ -42,6 +43,26 @@ export function loadSave() {
       if (!(save.weapons & 1)) save.weapons |= 1;   // the pistol is always owned
     }
   } catch { /* keep defaults */ }
+  // DEFECT FIX (M-4): clamp insane-but-finite values — a corrupted or
+  // hand-edited save must not produce negative cash, DAY 0, or a story
+  // counter past the finale. (Non-finite values already fell back to
+  // the defaults in the copy loop above.)
+  const clampInt = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.floor(v)));
+  save.cash = clampInt(save.cash, 0, 999999);
+  save.jobsDone = clampInt(save.jobsDone, 0, 8);
+  save.respect = Math.max(0, Math.floor(save.respect));
+  save.day = Math.max(1, Math.floor(save.day));
+  save.shells = clampInt(save.shells, 0, 15);        // fifteen golden shells exist
+  save.upgEngine = clampInt(save.upgEngine, 0, 3);   // three garage levels each
+  save.upgArmor = clampInt(save.upgArmor, 0, 3);
+  save.upgNitro = clampInt(save.upgNitro, 0, 1);
+  save.houseOwned = clampInt(save.houseOwned, 0, 1);
+  for (const f of ['cashEarned', 'carsDriven', 'carsStolen', 'copsEvaded',
+    'distance', 'playTime', 'carsSold', 'raceBest1', 'raceBest2',
+    'dstAirport', 'dstGarrison', 'dstHeights', 'dstOcean', 'dstDowntown',
+    'dstNorth', 'dstBonus']) {
+    if (save[f] < 0) save[f] = 0;   // counters and standing points never go negative
+  }
   return save;
 }
 

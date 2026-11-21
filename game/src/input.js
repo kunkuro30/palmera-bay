@@ -1,3 +1,4 @@
+// GO RIO RIO · input.js — keyboard/mouse state, the one-shot action queue, TPS aim flags.
 // Keyboard and mouse input. Held keys are read as a state snapshot each
 // frame; one-shot actions (enter car, punch, start, shoot) are queued so a
 // press between frames is never lost. Mouse drag orbits the follow camera.

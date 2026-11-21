@@ -1,3 +1,4 @@
+// GO RIO RIO · sidejobs.js — golden shells, courier work, deliveries and shop purchases.
 // BUILD 13 — depth systems: the fifteen golden shells, repeatable
 // courier work off the kiosk row, car delivery at Palmera Motors, and
 // the shop purchases (Palmera Arms armour, food-shop meals, Motors
